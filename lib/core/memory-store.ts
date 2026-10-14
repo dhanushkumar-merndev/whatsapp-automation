@@ -648,6 +648,9 @@ export class MemoryStore implements AppStore {
     this.notifications.push({ ...input, createdAt: this.iso() });
   }
 
+  /** Every write here is synchronous. */
+  async flush() {}
+
   async listCrmIntegrations(input: { enabledOnly: boolean; id?: string | null }) {
     return [...this.crmIntegrations.values()]
       .filter((i) => (!input.enabledOnly || i.enabled) && (!input.id || i.id === input.id))

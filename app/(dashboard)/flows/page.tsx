@@ -4,6 +4,7 @@ import { Workflow } from "lucide-react";
 import { PageHeader } from "@/components/common/page-header";
 import { EmptyState } from "@/components/common/empty-state";
 import { StatusBadge } from "@/components/common/status-badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { NewFlowDialog } from "@/components/flows/new-flow-dialog";
@@ -42,9 +43,9 @@ export default async function FlowsPage({ searchParams }: PageProps<"/flows">) {
         description="Customer-initiated WhatsApp automations. Lower priority numbers are matched first."
         actions={
           <>
-            <Link href={showArchived ? "/flows" : "/flows?archived=1"} className="text-sm text-muted-foreground hover:underline">
-              {showArchived ? "Hide archived" : "Show archived"}
-            </Link>
+            <Button variant="ghost" asChild>
+              <Link href={showArchived ? "/flows" : "/flows?archived=1"}>{showArchived ? "Hide archived" : "Show archived"}</Link>
+            </Button>
             <NewFlowDialog defaultOpen={sp.new === "1"} />
           </>
         }
@@ -65,9 +66,9 @@ export default async function FlowsPage({ searchParams }: PageProps<"/flows">) {
                 <TableHead>Flow</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Live version</TableHead>
-                <TableHead className="text-right">In progress</TableHead>
-                <TableHead>Projected usage</TableHead>
-                <TableHead>Edited</TableHead>
+                <TableHead className="hidden text-right md:table-cell">In progress</TableHead>
+                <TableHead className="hidden lg:table-cell">Projected usage</TableHead>
+                <TableHead className="hidden sm:table-cell">Edited</TableHead>
                 <TableHead className="w-10" />
               </TableRow>
             </TableHeader>
@@ -88,9 +89,11 @@ export default async function FlowsPage({ searchParams }: PageProps<"/flows">) {
                     <TableCell>
                       <StatusBadge status={f.status} />
                     </TableCell>
-                    <TableCell className="text-sm">{f.published_version_id ? `v${latest}` : "—"}</TableCell>
-                    <TableCell className="text-right tabular-nums">{fmtNumber(runningCount.get(f.id) ?? 0)}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-sm">
+                      {f.published_version_id ? `v${latest}` : <span className="text-xs text-muted-foreground">Draft — not published</span>}
+                    </TableCell>
+                    <TableCell className="hidden text-right tabular-nums md:table-cell">{fmtNumber(runningCount.get(f.id) ?? 0)}</TableCell>
+                    <TableCell className="hidden lg:table-cell">
                       {snap ? (
                         <div className="space-y-0.5">
                           <LevelPill level={snap.overallLevel} />
@@ -102,7 +105,7 @@ export default async function FlowsPage({ searchParams }: PageProps<"/flows">) {
                         <span className="text-xs text-muted-foreground">Not published</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{fmtAgo(f.draft_updated_at)}</TableCell>
+                    <TableCell className="hidden text-sm text-muted-foreground sm:table-cell">{fmtAgo(f.draft_updated_at)}</TableCell>
                     <TableCell className="relative z-10">
                       <FlowRowActions id={f.id} status={f.status} published={Boolean(f.published_version_id)} />
                     </TableCell>

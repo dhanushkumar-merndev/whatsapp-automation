@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FastForward, FlaskConical, RotateCcw, Send } from "lucide-react";
+import { FastForward, FlaskConical, Paperclip, RotateCcw, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -80,7 +80,9 @@ function OutboundBubble({ m, onPick }: { m: OutboundMessage; onPick: (id: string
   if (m.kind === "media") {
     return (
       <div>
-        <div className="font-medium">📎 {m.filename ?? m.mediaType}</div>
+        <div className="flex items-center gap-1.5 font-medium">
+          <Paperclip className="size-3.5" /> {m.filename ?? m.mediaType}
+        </div>
         {m.caption && <div className="mt-1 whitespace-pre-wrap">{m.caption}</div>}
       </div>
     );
@@ -245,7 +247,7 @@ export function Simulator({
       <div className="space-y-2 border-b p-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-sm font-medium">
-            <FlaskConical className="size-4 text-violet" /> Simulation
+            <FlaskConical className="size-4" /> Simulator
           </div>
           <Button variant="outline" size="xs" onClick={reset}>
             <RotateCcw /> Restart
@@ -264,7 +266,7 @@ export function Simulator({
           </label>
         </div>
         {stale && (
-          <button type="button" onClick={reset} className="w-full rounded bg-warning/10 px-2 py-1 text-left text-[11px] text-warning">
+          <button type="button" onClick={reset} className="w-full rounded-xl bg-warning/10 px-3 py-2 text-left text-xs text-warning">
             The flow changed since this simulation started — click to restart with the latest draft.
           </button>
         )}
@@ -324,8 +326,8 @@ export function Simulator({
             void send({ text: t });
           }}
         >
-          <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Message as the customer…" className="h-8 text-sm" />
-          <Button type="submit" size="icon-sm" disabled={busy || !text.trim()} aria-label="Send">
+          <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Message as the customer…" className="h-9 rounded-full px-4 text-sm" />
+          <Button type="submit" size="icon" disabled={busy || !text.trim()} aria-label="Send">
             <Send />
           </Button>
         </form>

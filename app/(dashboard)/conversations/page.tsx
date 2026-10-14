@@ -3,15 +3,16 @@ import Link from "next/link";
 import { MessagesSquare } from "lucide-react";
 import { PageHeader } from "@/components/common/page-header";
 import { EmptyState } from "@/components/common/empty-state";
+import { FilterPills } from "@/components/common/filter-pills";
+import { SearchInput } from "@/components/common/search-input";
 import { StatusBadge } from "@/components/common/status-badge";
 import { Card } from "@/components/ui/card";
 import { requirePageSession } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { loadSettings } from "@/lib/settings/server";
-import { isWindowOpen } from "@/lib/engine/window";
+import { isWindowOpen, windowExpiresAt } from "@/lib/engine/window";
 import { fmtAgo, fmtPhone } from "@/lib/format";
 import { hoursAgoIso } from "@/lib/server/metrics";
-import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Conversations" };
 
@@ -23,6 +24,13 @@ const VIEWS = {
   closed: "Closed",
 } as const;
 type View = keyof typeof VIEWS;
+
+/** Compact time until the reply window closes, e.g. "5h" or "40m". */
+function timeLeft(expires: Date | null): string {
+  if (!expires) return "";
+  const minutes = Math.max(0, Math.round((expires.getTime() - Date.now()) / 60_000));
+  return minutes >= 60 ? `${Math.floor(minutes / 60)}h` : `${minutes}m`;
+}
 
 export default async function ConversationsPage({ searchParams }: PageProps<"/conversations">) {
   await requirePageSession("staff");
@@ -43,7 +51,10 @@ export default async function ConversationsPage({ searchParams }: PageProps<"/co
   if (view === "open") query = query.gte("last_inbound_at", hoursAgoIso(24));
   if (view !== "test") query = query.eq("is_test", false);
   if (q) query = query.or(`name.ilike.%${q}%,profile_name.ilike.%${q}%,wa_id.ilike.%${q.replace(/\D/g, "") || q}%`, { referencedTable: "contacts" });
-  const { data: conversations, error } = await query;
+  const [{ data: conversations, error }, { count: needsReply }] = await Promise.all([
+    query,
+    supabase.from("conversations").select("id", { count: "exact", head: true }).eq("status", "handoff").eq("is_test", false),
+  ]);
 
   const ids = (conversations ?? []).map((c) => c.id);
   const { data: lastMessages } = ids.length
@@ -55,24 +66,24 @@ export default async function ConversationsPage({ searchParams }: PageProps<"/co
   return (
     <>
       <PageHeader title="Conversations" description="Customer-initiated WhatsApp conversations. You can reply manually while the 24-hour window is open." />
-      <div className="mb-4 flex flex-wrap items-center gap-1.5">
-        {(Object.keys(VIEWS) as View[]).map((v) => (
-          <Link
-            key={v}
-            href={`/conversations${v === "all" ? "" : `?view=${v}`}`}
-            className={cn("rounded-full border px-3 py-1 text-xs", view === v ? "border-foreground bg-foreground text-background" : "hover:bg-muted")}
-          >
-            {VIEWS[v]}
-          </Link>
-        ))}
-        <form className="ml-auto">
-          {view !== "all" && <input type="hidden" name="view" value={view} />}
-          <input name="q" defaultValue={q} placeholder="Search name or number" className="h-9 w-56 rounded-full border bg-background px-4 text-sm outline-none focus:ring-2 focus:ring-ring/40" />
-        </form>
+      <div className="mb-4 flex flex-col-reverse gap-3 md:flex-row md:items-center md:justify-between">
+        <FilterPills
+          items={(Object.keys(VIEWS) as View[]).map((v) => ({
+            href: `/conversations${v === "all" ? "" : `?view=${v}`}`,
+            label: VIEWS[v],
+            active: view === v,
+            count: v === "handoff" ? (needsReply ?? 0) : undefined,
+          }))}
+        />
+        <SearchInput placeholder="Search name or number" />
       </div>
       {error && <p className="mb-4 rounded-xl bg-destructive/10 p-3 text-sm text-destructive">{error.message}</p>}
       {!conversations?.length ? (
-        <EmptyState icon={MessagesSquare} title="No conversations" description="Conversations start when a customer messages your WhatsApp number." />
+        <EmptyState
+          icon={MessagesSquare}
+          title={q ? `No conversations match “${q}”` : view === "handoff" ? "Nobody is waiting for a reply" : "No conversations"}
+          description={q ? "Try a name or part of the phone number." : "Conversations start when a customer messages your WhatsApp number."}
+        />
       ) : (
         <Card className="py-0">
           <ul className="divide-y">
@@ -95,11 +106,14 @@ export default async function ConversationsPage({ searchParams }: PageProps<"/co
                         {last ? `${last.direction === "outbound" ? "You: " : ""}${last.body ?? "[media]"}` : "No messages"}
                       </div>
                     </div>
-                    <div className="flex shrink-0 items-center gap-1.5">
+                    <div className="flex shrink-0 items-center gap-2">
                       {contact.opted_out && <StatusBadge status="opted out" tone="red" />}
-                      {c.status !== "open" && <StatusBadge status={c.status} />}
-                      {open ? <StatusBadge status="window open" tone="green" /> : <StatusBadge status="window closed" tone="gray" />}
-                      <span className="w-20 text-right text-xs text-muted-foreground">{fmtAgo(c.last_inbound_at)}</span>
+                      {c.status === "handoff" && <StatusBadge status="needs reply" tone="amber" />}
+                      {c.status === "closed" && <StatusBadge status="closed" />}
+                      <div className="hidden w-24 text-right sm:block">
+                        <div className="text-xs text-muted-foreground">{fmtAgo(c.last_inbound_at)}</div>
+                        {open && <div className="text-[11px] text-success">{timeLeft(windowExpiresAt(c.last_inbound_at, settings))} left</div>}
+                      </div>
                     </div>
                   </Link>
                 </li>

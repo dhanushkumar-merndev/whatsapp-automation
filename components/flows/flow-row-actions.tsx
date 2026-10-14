@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Archive, Copy, FlaskConical, MoreHorizontal, Pause, Pencil, Play } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/common/confirm-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,9 +19,20 @@ import { duplicateFlowAction, setFlowStatusAction } from "@/app/(dashboard)/flow
 export function FlowRowActions({ id, status, published }: { id: string; status: string; published: boolean }) {
   const router = useRouter();
   const [pending, start] = useTransition();
+  const confirm = useConfirm();
   const setStatus = (s: "active" | "testing" | "paused" | "archived") =>
     start(async () => {
-      if (s === "archived" && !confirm("Archive this flow?")) return;
+      if (
+        s === "archived" &&
+        !(await confirm({
+          title: "Archive this flow?",
+          description: "It stops running and is hidden from the list. You can still find it under “Show archived”.",
+          confirmLabel: "Archive",
+          destructive: true,
+        }))
+      ) {
+        return;
+      }
       const r = await setFlowStatusAction({ flowId: id, status: s });
       if (!r.ok) toast.error(r.error);
       else {

@@ -2,14 +2,15 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Pencil, PlugZap, Plus } from "lucide-react";
+import { Loader2, Pencil, PlugZap, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/common/confirm-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { saveAccountAction, testAccountAction } from "@/app/(dashboard)/whatsapp/actions";
+import { deleteAccountAction, saveAccountAction, testAccountAction } from "@/app/(dashboard)/whatsapp/actions";
 
 export function AccountForm({ initial }: { initial?: { id: string; name: string; wabaId: string; phoneNumberId: string; enabled: boolean } }) {
   const router = useRouter();
@@ -91,6 +92,36 @@ export function TestAccountButton({ id }: { id: string }) {
       }
     >
       {pending ? <Loader2 className="animate-spin" /> : <PlugZap />} Test connection
+    </Button>
+  );
+}
+
+export function DeleteAccountButton({ id, name }: { id: string; name: string }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const confirm = useConfirm();
+  return (
+    <Button
+      variant="destructive"
+      size="sm"
+      disabled={pending}
+      onClick={async () => {
+        const ok = await confirm({
+          title: `Remove “${name}”?`,
+          description: "Numbers with conversation history can't be removed and stay disabled instead. This can't be undone.",
+          confirmLabel: "Remove",
+          destructive: true,
+        });
+        if (!ok) return;
+        start(async () => {
+          const r = await deleteAccountAction({ id });
+          if (r.ok) toast.success("Number removed");
+          else toast.error(r.error);
+          router.refresh();
+        });
+      }}
+    >
+      {pending ? <Loader2 className="animate-spin" /> : <Trash2 />} Remove
     </Button>
   );
 }

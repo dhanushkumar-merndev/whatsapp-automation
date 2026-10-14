@@ -6,7 +6,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
     <>
       <PageHeader title="Settings" description="Automation rules, team access, security and privacy." />
       <SettingsNav />
-      <div className="mt-5">{children}</div>
+      <div className="mt-5 max-w-5xl">{children}</div>
     </>
   );
 }

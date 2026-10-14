@@ -74,18 +74,22 @@ async function runFlowResume(deps: PipelineDeps, job: ScheduledJobRecord, lockWa
 
 async function resumeClaimed(deps: PipelineDeps, job: ScheduledJobRecord): Promise<JobOutcome> {
   const { store } = deps;
-  const exec = await store.getExecution(job.executionId!);
+  // Independent reads in one round; the checks below still run in the same order.
+  const [exec, jobFlowStatus, ctx] = await Promise.all([
+    store.getExecution(job.executionId!),
+    job.flowId ? store.getFlowStatus(job.flowId) : null,
+    store.getConversationContext(job.conversationId!),
+  ]);
   if (!exec || exec.status !== "waiting_delay") {
     await store.finishScheduledJob(job.id, "skipped", `execution_${exec?.status ?? "missing"}`);
     return { status: "skipped", detail: `execution_${exec?.status ?? "missing"}` };
   }
-  const flowStatus = await store.getFlowStatus(exec.flowId);
+  const flowStatus = job.flowId === exec.flowId ? jobFlowStatus : await store.getFlowStatus(exec.flowId);
   if (flowStatus !== "active" && flowStatus !== "testing") {
     await store.setExecutionStatus(exec.id, "paused", `Flow is ${flowStatus ?? "missing"}`);
     await store.finishScheduledJob(job.id, "cancelled", "flow_not_active");
     return { status: "skipped", detail: "flow_not_active" };
   }
-  const ctx = await store.getConversationContext(exec.conversationId);
   if (!ctx) {
     await store.finishScheduledJob(job.id, "failed", "conversation_missing");
     return { status: "skipped", detail: "conversation_missing" };

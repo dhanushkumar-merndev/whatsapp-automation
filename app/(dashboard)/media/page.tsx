@@ -53,9 +53,14 @@ export default async function MediaPage() {
         </CardContent>
       </Card>
       {!assets?.length ? (
-        <EmptyState icon={FileText} title="No files yet" description="Upload your company brochure (PDF) and select it in the flow's “Send media” step." />
+        <EmptyState
+          icon={FileText}
+          title="No files yet"
+          description="Upload your company brochure (PDF), then choose it in a flow's “Send media” step."
+          action={<MediaUploader />}
+        />
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           {assets.map((a) => {
             const Icon = ICONS[a.kind as keyof typeof ICONS] ?? FileText;
             return (

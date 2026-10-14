@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, RefreshCw, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/common/confirm-dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -26,6 +27,7 @@ export function LeadEditor({
   const [assigned, setAssigned] = useState(lead.assigned_to ?? "");
   const [notes, setNotes] = useState(lead.notes ?? "");
   const [pending, start] = useTransition();
+  const confirm = useConfirm();
 
   return (
     <div className="space-y-4">
@@ -103,8 +105,14 @@ export function LeadEditor({
             variant="ghost"
             className="text-destructive"
             disabled={pending}
-            onClick={() => {
-              if (!confirm("Delete this lead permanently? The conversation history is kept.")) return;
+            onClick={async () => {
+              const ok = await confirm({
+                title: "Delete this lead permanently?",
+                description: "The WhatsApp conversation history is kept. This can't be undone.",
+                confirmLabel: "Delete lead",
+                destructive: true,
+              });
+              if (!ok) return;
               start(async () => {
                 const r = await deleteLeadAction({ leadId: lead.id });
                 if (r.ok) router.push("/leads");

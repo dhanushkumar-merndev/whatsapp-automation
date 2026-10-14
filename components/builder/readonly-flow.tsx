@@ -6,10 +6,12 @@ import { useMemo } from "react";
 import { Background, BackgroundVariant, Controls, ReactFlow, ReactFlowProvider } from "@xyflow/react";
 import type { FlowDefinition } from "@/lib/engine/schema";
 import { FlowNode } from "./flow-node";
-import { toEditor, type EditorEdge, type EditorNode } from "./model";
+import { EDGE_TYPE, toEditor, type EditorEdge, type EditorNode } from "./model";
+import { InsertEdge } from "./insert-edge";
 import { EditorContext } from "./editor-context";
 
 const nodeTypes = { flowNode: FlowNode };
+const edgeTypes = { [EDGE_TYPE]: InsertEdge };
 
 /** Read-only diagram highlighting the path a customer took through a flow version. */
 export function ReadonlyFlow({ definition, visited, current, height = 520 }: { definition: FlowDefinition; visited: string[]; current: string | null; height?: number }) {
@@ -41,13 +43,14 @@ export function ReadonlyFlow({ definition, visited, current, height = 520 }: { d
   }, [definition, visited, current]);
 
   return (
-    <EditorContext.Provider value={{ mediaNames: {}, media: [], crm: [] }}>
+    <EditorContext.Provider value={{ mediaNames: {}, media: [], crm: [], actions: null }}>
       <ReactFlowProvider>
         <div style={{ height }} className="overflow-hidden rounded-2xl border bg-muted/30">
           <ReactFlow<EditorNode, EditorEdge>
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             fitView
             fitViewOptions={{ padding: 0.12 }}
             nodesDraggable={false}

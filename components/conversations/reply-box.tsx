@@ -2,13 +2,23 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowUp, Loader2 } from "lucide-react";
+import { ArrowUp, Ban, Clock, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { sendManualReplyAction } from "@/app/(dashboard)/conversations/actions";
 
-export function ReplyBox({ conversationId, windowOpen, expiresLabel }: { conversationId: string; windowOpen: boolean; expiresLabel: string }) {
+export function ReplyBox({
+  conversationId,
+  windowOpen,
+  optedOut = false,
+  expiresLabel,
+}: {
+  conversationId: string;
+  windowOpen: boolean;
+  optedOut?: boolean;
+  expiresLabel: string;
+}) {
   const router = useRouter();
   const [text, setText] = useState("");
   const [pending, start] = useTransition();
@@ -21,10 +31,20 @@ export function ReplyBox({ conversationId, windowOpen, expiresLabel }: { convers
       } else toast.error(r.error);
     });
   if (!windowOpen) {
+    const Icon = optedOut ? Ban : Clock;
     return (
-      <div className="rounded-3xl border bg-muted/50 p-4 text-sm text-muted-foreground">
-        The 24-hour customer service window has closed. Free-form replies are blocked until the customer messages again —
-        the bot never starts conversations.
+      <div className="flex items-start gap-3 rounded-3xl border bg-muted/50 p-4 text-sm">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-background">
+          <Icon className="size-4 text-muted-foreground" />
+        </span>
+        <div>
+          <div className="font-medium">{optedOut ? "This customer has opted out" : "Reply window closed"}</div>
+          <p className="mt-0.5 text-muted-foreground">
+            {optedOut
+              ? "They asked to stop messages. Nothing can be sent until they opt back in (for example by sending START)."
+              : "WhatsApp only allows free-form replies within 24 hours of the customer's last message. You can reply again as soon as they write back."}
+          </p>
+        </div>
       </div>
     );
   }

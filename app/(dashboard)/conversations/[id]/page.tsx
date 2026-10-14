@@ -76,37 +76,40 @@ export default async function ConversationPage({ params }: PageProps<"/conversat
 
   const open = isWindowOpen(conv.last_inbound_at, new Date(), settings);
   const expires = windowExpiresAt(conv.last_inbound_at, settings);
-  const expiresLabel = expires ? `closes in ${formatDistanceToNowStrict(expires)}` : "";
+  const expiresLeft = expires ? formatDistanceToNowStrict(expires) : "";
+  const expiresLabel = expires ? `closes in ${expiresLeft}` : "";
 
   return (
-    <>
-      <Button variant="ghost" size="sm" asChild className="mb-2 -ml-2">
+    // Desktop: the page fills the viewport; messages scroll inside the chat card and the reply box stays at the bottom.
+    <div className="flex flex-col lg:h-[calc(100dvh-4.25rem)]">
+      <Button variant="ghost" size="sm" asChild className="mb-1 -ml-2 w-fit">
         <Link href="/conversations">
           <ArrowLeft /> Conversations
         </Link>
       </Button>
       <PageHeader
+        className="mb-4"
         title={contact.name ?? contact.profile_name ?? fmtPhone(contact.wa_id)}
         description={
           <span className="flex flex-wrap items-center gap-2">
             {fmtPhone(contact.wa_id)}
             <StatusBadge status={conv.status} />
-            {open ? <StatusBadge status="window open" tone="green" /> : <StatusBadge status="window closed" tone="gray" />}
+            {open ? <StatusBadge status={`window open · ${expiresLeft} left`} tone="green" /> : <StatusBadge status="window closed" tone="gray" />}
             {conv.is_test && <StatusBadge status="test number" tone="violet" />}
             {contact.opted_out && <StatusBadge status="opted out" tone="red" />}
           </span>
         }
         actions={<StatusControls conversationId={conv.id} status={conv.status} />}
       />
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <Card className="py-0">
+      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_420px]">
+        <div className="flex min-h-0 flex-col gap-3">
+          <Card className="min-h-0 flex-1 py-0">
             {/* column-reverse keeps the scroll pinned to the newest message on load */}
-            <div className="flex max-h-[60vh] flex-col-reverse overflow-y-auto p-5">
+            <div className="flex h-full max-h-[65dvh] flex-col-reverse overflow-y-auto p-5 lg:max-h-none">
               <div className="space-y-2">
                 {(messages ?? []).map((m) => (
                   <div key={m.id} className={cn("flex", m.direction === "inbound" ? "justify-start" : "justify-end")}>
-                    <div className="max-w-[78%]">
+                    <div className="max-w-[min(78%,760px)]">
                       <div
                         className={cn(
                           "rounded-3xl px-4 py-2 text-sm whitespace-pre-wrap",
@@ -129,11 +132,11 @@ export default async function ConversationPage({ params }: PageProps<"/conversat
               </div>
             </div>
           </Card>
-          <div className="mt-3">
-            <ReplyBox conversationId={conv.id} windowOpen={open && !contact.opted_out} expiresLabel={expiresLabel} />
+          <div className="shrink-0">
+            <ReplyBox conversationId={conv.id} windowOpen={open && !contact.opted_out} optedOut={contact.opted_out} expiresLabel={expiresLabel} />
           </div>
         </div>
-        <div className="space-y-4">
+        <div className="min-h-0 space-y-4 lg:overflow-y-auto lg:pr-1">
           <Card>
             <CardHeader>
               <CardTitle className="text-sm">Customer</CardTitle>
@@ -193,6 +196,6 @@ export default async function ConversationPage({ params }: PageProps<"/conversat
           </Card>
         </div>
       </div>
-    </>
+    </div>
   );
 }

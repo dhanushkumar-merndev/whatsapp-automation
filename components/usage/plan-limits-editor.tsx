@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/common/confirm-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -181,14 +182,15 @@ export function PlanLimitDialog({ item }: { item?: PlanLimitItem }) {
 export function DeletePlanLimitButton({ id }: { id: string }) {
   const router = useRouter();
   const [pending, start] = useTransition();
+  const confirm = useConfirm();
   return (
     <Button
       variant="ghost"
       size="icon-sm"
       aria-label="Delete limit"
       disabled={pending}
-      onClick={() => {
-        if (!confirm("Delete this allowance row?")) return;
+      onClick={async () => {
+        if (!(await confirm({ title: "Delete this allowance?", description: "Usage meters stop comparing against it.", confirmLabel: "Delete", destructive: true }))) return;
         start(async () => {
           const r = await deletePlanLimitAction({ id });
           if (!r.ok) toast.error(r.error);

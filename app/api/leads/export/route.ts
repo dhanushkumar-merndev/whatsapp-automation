@@ -32,6 +32,7 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: e instanceof Error ? e.message : "Unauthorized" }, { status });
   }
   const filters = parseLeadFilters(Object.fromEntries(req.nextUrl.searchParams));
+  if (filters.assigned === "me") filters.assigned = session.userId;
   const supabase = await createClient();
   const { data, error } = await applyLeadFilters(supabase.from("leads").select(LEAD_COLUMNS), filters)
     .order("created_at", { ascending: false })

@@ -116,13 +116,13 @@ export const NODE_REGISTRY: { [K in NodeType]: NodeDefinition<K> } = {
   validation: {
     type: "validation",
     label: "Validate answer",
-    description: "Check the last answer. Re-asks with an error message up to the retry limit.",
+    description: "Check the last answer. Re-asks with an error message, then takes the Failed branch.",
     category: "logic",
     color: "#db2777",
     hasInput: true,
     outputs: [
       { id: "valid", label: "Valid" },
-      { id: "invalid", label: "Retries exhausted" },
+      { id: "invalid", label: "Failed" },
     ],
     sends: false,
     waitsForInput: false,
@@ -146,8 +146,8 @@ export const NODE_REGISTRY: { [K in NodeType]: NodeDefinition<K> } = {
     color: "#ea580c",
     hasInput: true,
     outputs: [
-      { id: "true", label: "True" },
-      { id: "false", label: "False" },
+      { id: "true", label: "Yes" },
+      { id: "false", label: "No" },
     ],
     sends: false,
     waitsForInput: false,

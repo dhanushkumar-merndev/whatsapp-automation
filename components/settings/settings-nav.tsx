@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { cn } from "@/lib/utils";
+import { SegmentedNav } from "@/components/common/segmented-nav";
 
 const ITEMS = [
   { href: "/settings", label: "General" },
@@ -13,17 +12,5 @@ const ITEMS = [
 
 export function SettingsNav() {
   const path = usePathname();
-  return (
-    <div className="inline-flex flex-wrap rounded-full bg-muted p-1">
-      {ITEMS.map((i) => (
-        <Link
-          key={i.href}
-          href={i.href}
-          className={cn("rounded-full px-3.5 py-1.5 text-xs font-medium", path === i.href ? "bg-background shadow-sm dark:bg-accent" : "text-muted-foreground hover:text-foreground")}
-        >
-          {i.label}
-        </Link>
-      ))}
-    </div>
-  );
+  return <SegmentedNav items={ITEMS.map((i) => ({ ...i, active: path === i.href }))} />;
 }

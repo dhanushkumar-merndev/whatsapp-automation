@@ -36,7 +36,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <NotificationsMenu {...notifications} />
         </header>
         {/* Pages that render data-full-bleed (the flow builder) take the whole area. */}
-        <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 pt-4 pb-10 has-[[data-full-bleed]]:max-w-none has-[[data-full-bleed]]:p-0 lg:px-8 lg:pt-8">
+        <main className="w-full flex-1 px-4 pt-4 pb-10 has-[[data-full-bleed]]:p-0 lg:px-8 lg:pt-7 2xl:px-10">
           {children}
         </main>
       </div>

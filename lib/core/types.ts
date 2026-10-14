@@ -104,6 +104,9 @@ export interface AppStore extends EngineStore {
     detail?: Record<string, unknown>;
   }): Promise<void>;
   countRecentSecurityEvents(scope: string, contactId: string, sinceIso: string): Promise<number>;
+
+  /** Waits for writes the store runs in the background. Call before the request ends. */
+  flush(): Promise<void>;
 }
 
 export interface Limiter {

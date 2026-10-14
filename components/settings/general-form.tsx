@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Save, Search, Send } from "lucide-react";
 import { toast } from "sonner";
@@ -13,14 +13,28 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { findTelegramChatsAction, sendTelegramTestAction, updateSettingsAction } from "@/app/(dashboard)/settings/actions";
 import type { AppSettings } from "@/lib/settings/schema";
+import { cn } from "@/lib/utils";
 
 const list = (s: string) => s.split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
 
 function Num({ label, value, onChange, help }: { label: string; value: number; onChange: (n: number) => void; help?: string }) {
+  // Keep what is typed (even an empty box) and only commit the number on blur.
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = () => {
+    if (draft === null) return;
+    onChange(Number(draft) || 0);
+    setDraft(null);
+  };
   return (
     <div className="space-y-1">
       <Label className="text-xs">{label}</Label>
-      <Input type="number" value={value} onChange={(e) => onChange(Number(e.target.value) || 0)} />
+      <Input
+        inputMode="decimal"
+        value={draft ?? String(value)}
+        onChange={(e) => setDraft(e.target.value.replace(/[^\d.-]/g, ""))}
+        onBlur={commit}
+        onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+      />
       {help && <p className="text-[11px] text-muted-foreground">{help}</p>}
     </div>
   );
@@ -113,6 +127,16 @@ export function GeneralSettingsForm({ initial, telegramTokenSet }: { initial: Ap
   const [pending, start] = useTransition();
   const [kw, setKw] = useState({ stop: initial.keywords.stop.join(", "), start: initial.keywords.start.join(", "), human: initial.keywords.human.join(", ") });
   const [tests, setTests] = useState(initial.testPhoneNumbers.join("\n"));
+  const current = JSON.stringify({ s, kw, tests });
+  const [saved, setSaved] = useState(current);
+  const dirty = current !== saved;
+
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
 
   const save = () =>
     start(async () => {
@@ -130,6 +154,7 @@ export function GeneralSettingsForm({ initial, telegramTokenSet }: { initial: Ap
         telegram: s.telegram,
       });
       if (r.ok) {
+        setSaved(current);
         toast.success("Settings saved");
         router.refresh();
       } else toast.error(r.error);
@@ -266,10 +291,18 @@ export function GeneralSettingsForm({ initial, telegramTokenSet }: { initial: Ap
         </CardContent>
       </Card>
 
-      <div className="sticky bottom-4 flex justify-end">
-        <Button size="lg" onClick={save} disabled={pending} className="shadow-lg">
-          {pending ? <Loader2 className="animate-spin" /> : <Save />} Save settings
-        </Button>
+      <div className="sticky bottom-4 z-10 flex justify-end">
+        <div
+          className={cn(
+            "flex items-center gap-3 rounded-full py-1.5 pr-1.5 pl-4 transition-all",
+            dirty ? "border bg-background/95 shadow-lg backdrop-blur" : "pl-1.5",
+          )}
+        >
+          {dirty && <span className="text-sm text-muted-foreground">You have unsaved changes</span>}
+          <Button onClick={save} disabled={pending || !dirty} className={dirty ? undefined : "shadow-sm"}>
+            {pending ? <Loader2 className="animate-spin" /> : <Save />} {dirty ? "Save settings" : "Saved"}
+          </Button>
+        </div>
       </div>
     </div>
   );

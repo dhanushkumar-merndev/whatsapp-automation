@@ -166,10 +166,14 @@ export default async function LeadPage({ params }: PageProps<"/leads/[id]">) {
           </CardContent>
         </Card>
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-sm">Recent messages</CardTitle>
+            <Link href={`/conversations/${lead.conversation_id}`} className="text-xs text-muted-foreground hover:text-foreground">
+              Open conversation →
+            </Link>
           </CardHeader>
           <CardContent className="space-y-1.5">
+            {!messages?.length && <p className="text-sm text-muted-foreground">No messages yet.</p>}
             {[...(messages ?? [])].reverse().map((m) => (
               <div key={m.id} className={`flex ${m.direction === "inbound" ? "justify-start" : "justify-end"}`}>
                 <div className={`max-w-[85%] rounded-2xl px-3 py-1.5 text-sm whitespace-pre-wrap ${m.direction === "inbound" ? "bg-muted" : "bg-foreground text-background"}`}>

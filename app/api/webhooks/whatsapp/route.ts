@@ -57,25 +57,26 @@ export async function POST(req: NextRequest) {
     return new Response("Invalid JSON", { status: 400 });
   }
 
-  const deps = await createPipelineDeps("webhook.whatsapp");
+  const deps = await createPipelineDeps("webhook.whatsapp", { backgroundWrites: true });
   let result;
   try {
     result = await ingestWebhook({ store: deps.store, settings: deps.settings, expectedWabaId: env.META_WABA_ID }, payload);
   } catch (e) {
     log.error("failed to record webhook", { error: e instanceof Error ? e.message : String(e) });
+    after(() => deps.store.flush());
     return new Response("Temporary failure", { status: 500 });
   }
 
-  if (result.conversations.length) {
-    after(async () => {
-      for (const id of result.conversations) {
-        try {
-          await processConversation(deps, id);
-        } catch (e) {
-          log.error("conversation processing failed", { conversationId: id, error: e instanceof Error ? e.message : String(e) });
-        }
+  // Always registered: status-only events still leave usage counters to flush.
+  after(async () => {
+    for (const id of result.conversations) {
+      try {
+        await processConversation(deps, id);
+      } catch (e) {
+        log.error("conversation processing failed", { conversationId: id, error: e instanceof Error ? e.message : String(e) });
       }
-    });
-  }
+    }
+    await deps.store.flush();
+  });
   return Response.json({ ok: true, recorded: result.recorded, duplicates: result.duplicates, statuses: result.statuses });
 }

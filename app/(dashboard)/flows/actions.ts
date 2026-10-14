@@ -13,6 +13,12 @@ import { estimateFlow, estimateSnapshot, type EstimateReport } from "@/lib/estim
 import { loadPlanContext } from "@/lib/estimator/plan-context";
 import { buildDefaultFlowDefinition, DEFAULT_FLOW_DESCRIPTION, DEFAULT_FLOW_NAME } from "@/lib/flows/default-flow";
 import { blankFlowDefinition } from "@/lib/flows/blank-flow";
+import {
+  buildRealEstateFlowDefinition,
+  REAL_ESTATE_FLOW_DESCRIPTION,
+  REAL_ESTATE_FLOW_NAME,
+  REAL_ESTATE_FLOW_PRIORITY,
+} from "@/lib/flows/real-estate-flow";
 import { qstashClient } from "@/lib/qstash";
 
 const uuid = z.uuid();
@@ -37,15 +43,19 @@ async function writeLimits() {
 
 // ---------------------------------------------------------------------------
 
-export async function createFlowAction(input: { name: string; template: "blank" | "star_growth_hub" }) {
+export type FlowTemplate = "blank" | "star_growth_hub" | "real_estate_ads";
+
+export async function createFlowAction(input: { name: string; template: FlowTemplate }) {
   const result = await runAction(async () => {
     const s = await loadSettings();
     const session = await requireAdmin({
       limit: { prefix: "flow_create", tokens: s.rateLimits.flowCreatesPerHour, windowSeconds: 3600 },
     });
-    const name = z.string().trim().min(1).max(120).parse(input.name || (input.template === "blank" ? "Untitled flow" : DEFAULT_FLOW_NAME));
-    let definition: FlowDefinition = blankFlowDefinition();
-    if (input.template === "star_growth_hub") {
+    const template = z.enum(["blank", "star_growth_hub", "real_estate_ads"]).parse(input.template);
+    const defaultName = { blank: "Untitled flow", star_growth_hub: DEFAULT_FLOW_NAME, real_estate_ads: REAL_ESTATE_FLOW_NAME }[template];
+    const name = z.string().trim().min(1).max(120).parse(input.name || defaultName);
+    let definition: FlowDefinition = template === "real_estate_ads" ? buildRealEstateFlowDefinition() : blankFlowDefinition();
+    if (template === "star_growth_hub") {
       const { data: brochure } = await createAdminClient()
         .from("media_assets")
         .select("id")
@@ -62,7 +72,9 @@ export async function createFlowAction(input: { name: string; template: "blank" 
       .from("flows")
       .insert({
         name,
-        description: input.template === "star_growth_hub" ? DEFAULT_FLOW_DESCRIPTION : null,
+        description: template === "star_growth_hub" ? DEFAULT_FLOW_DESCRIPTION : template === "real_estate_ads" ? REAL_ESTATE_FLOW_DESCRIPTION : null,
+        // Keyword flows must outrank the catch-all enquiry flow.
+        ...(template === "real_estate_ads" ? { priority: REAL_ESTATE_FLOW_PRIORITY } : {}),
         draft_definition: definition,
         created_by: session.userId,
         updated_by: session.userId,
@@ -70,7 +82,7 @@ export async function createFlowAction(input: { name: string; template: "blank" 
       .select("id")
       .single();
     if (error) throw new Error(error.message);
-    await audit(session, "flow.created", { type: "flow", id: data.id }, { template: input.template });
+    await audit(session, "flow.created", { type: "flow", id: data.id }, { template });
     return data.id as string;
   });
   if (result.ok && result.data) redirect(`/flows/${result.data}`);

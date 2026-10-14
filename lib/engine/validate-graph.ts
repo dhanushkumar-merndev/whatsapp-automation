@@ -3,6 +3,7 @@ import { NODE_REGISTRY } from "./registry";
 import { safeParseNodeConfig, type FlowDefinition, type NodeType } from "./schema";
 import { checkPattern } from "./validate-answer";
 import { templateVariables } from "./template";
+import { definedVariableNames } from "./variables";
 
 export interface GraphIssue {
   level: "error" | "warning";
@@ -59,7 +60,7 @@ export function validateFlow(def: FlowDefinition): GraphValidation {
   }
 
   // Per-node configuration -----------------------------------------------------
-  const variablesSet = new Set<string>();
+  const variablesSet = definedVariableNames(def);
   for (const n of def.nodes) {
     const parsed = safeParseNodeConfig(n.type, n.data.config);
     if (!parsed.success) {
@@ -69,9 +70,6 @@ export function validateFlow(def: FlowDefinition): GraphValidation {
       continue;
     }
     const cfg = parsed.data as Record<string, unknown>;
-    if ((n.type === "ask_question" || n.type === "interactive") && typeof cfg.variable === "string") {
-      variablesSet.add(cfg.variable);
-    }
     if (n.type === "interactive") {
       const opts = cfg.options as { id: string }[];
       const dupes = opts.map((o) => o.id).filter((id, i, a) => a.indexOf(id) !== i);
@@ -100,7 +98,7 @@ export function validateFlow(def: FlowDefinition): GraphValidation {
     for (const out of def_.outputs) {
       if (graph.next(n.id, out.id)) continue;
       if (n.type === "validation" && out.id === "invalid") {
-        warn(`“${label(n.id)}”: “Retries exhausted” is not connected — the flow will end. Consider a Human handoff.`, n.id);
+        warn(`“${label(n.id)}”: the “Failed” branch is not connected — the flow will end. Consider a Human handoff.`, n.id);
       } else if (n.type === "condition") {
         warn(`“${label(n.id)}”: the “${out.label}” branch is not connected — the flow will end there.`, n.id);
       } else {
@@ -142,7 +140,7 @@ export function validateFlow(def: FlowDefinition): GraphValidation {
     for (const text of collectTemplates(n.data.config)) {
       for (const ref of templateVariables(text)) {
         const [root, name] = ref.split(".");
-        if (root === "vars" && name && !variablesSet.has(name) && !["first_message", "last_message"].includes(name)) {
+        if (root === "vars" && name && !variablesSet.has(name)) {
           warn(`“${label(n.id)}” uses {{${ref}}}, which no question sets.`, n.id);
         }
       }

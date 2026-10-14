@@ -62,55 +62,95 @@ export default async function OverviewPage({ searchParams }: PageProps<"/overvie
         actions={<RangeFilter value={range} basePath="/overview" />}
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Total customers" value={fmtNumber(m.customers)} icon={Users} href="/conversations" />
-        <StatCard label="New leads today" value={fmtNumber(m.newLeadsToday)} icon={UserPlus} href="/leads?view=new" />
-        <StatCard label="Qualified leads" value={fmtNumber(m.qualified)} sub={`last ${days} days`} icon={UserCheck} href="/leads?view=qualified" />
-        <StatCard label="Active conversations" value={fmtNumber(m.activeConversations)} sub="within the 24h window" icon={MessagesSquare} href="/conversations?view=open" />
-        <StatCard label="Messages received" value={fmtNumber(m.received)} sub={`last ${days} days`} icon={Inbox} />
-        <StatCard label="Messages sent" value={fmtNumber(m.sent)} sub={`last ${days} days`} icon={Send} />
-        <StatCard label="Flows running" value={fmtNumber(m.flowsActive)} sub={`${fmtNumber(m.inProgress)} conversations in progress`} icon={Workflow} href="/flows" />
-        <StatCard
-          label="Automation errors"
-          value={fmtNumber(m.errors)}
-          sub={`last ${days} days`}
-          icon={AlertTriangle}
-          href="/logs?status=failed"
-          tone={m.errors > 0 ? "critical" : "default"}
-        />
-        <StatCard
-          label="CRM sync"
-          value={`${fmtNumber(m.crm.synced)} synced`}
-          sub={`${fmtNumber(m.crm.pending)} pending · ${fmtNumber(m.crm.failed)} failed`}
-          icon={Webhook}
-          href="/leads?view=crm_failed"
-          tone={m.crm.failed > 0 ? "warning" : "default"}
-        />
-        <StatCard
-          label="QStash usage today"
-          value={fmtNumber(m.qstashToday.value)}
-          sub={m.qstashLimit ? `of ${fmtNumber(m.qstashLimit)} / day (${Math.round((qstashPct ?? 0) * 100)}%)` : "no allowance set"}
-          icon={CalendarClock}
-          source={m.qstashToday.source === "unavailable" ? "local_measured" : m.qstashToday.source}
-          href="/usage"
-          tone={qstashPct !== null && qstashPct >= 0.85 ? "warning" : "default"}
-        />
-        <StatCard
-          label="Redis usage this month"
-          value={fmtNumber(m.redisMonth.value)}
-          sub={m.redisLimit ? `of ${fmtNumber(m.redisLimit)} commands (${Math.round((redisPct ?? 0) * 100)}%)` : undefined}
-          icon={Database}
-          source={m.redisMonth.source === "unavailable" ? "estimate" : m.redisMonth.source}
-          href="/usage"
-        />
-        <StatCard
-          label="Est. WhatsApp cost (month)"
-          value={m.meta.estimatedCost === null ? "Unavailable" : fmtMoney(m.meta.estimatedCost, m.meta.rate?.currency ?? "USD")}
-          sub={`${fmtNumber(m.meta.billable)} billable messages reported by Meta`}
-          icon={IndianRupee}
-          source={m.meta.rate ? "manual" : "unavailable"}
-          href="/usage"
-        />
+      {(m.needsReply > 0 || (alerts?.length ?? 0) > 0) && (
+        <section className="mb-6">
+          <h2 className="mb-2.5 text-sm font-medium text-muted-foreground">Needs attention</h2>
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {m.needsReply > 0 && (
+              <Link href="/conversations?view=handoff" className="flex items-center gap-3 rounded-2xl border border-warning/30 bg-warning/5 p-3.5 text-sm hover:bg-warning/10">
+                <span className="size-2 shrink-0 rounded-full bg-warning" />
+                <span>
+                  <span className="font-medium">{m.needsReply}</span> conversation{m.needsReply === 1 ? "" : "s"} waiting for your team
+                </span>
+              </Link>
+            )}
+            {(alerts ?? []).map((a) => (
+              <Link key={a.id} href={a.link ?? "#"} className="flex items-start gap-3 rounded-2xl border p-3.5 text-sm hover:bg-muted/40">
+                <span className={`mt-1.5 size-2 shrink-0 rounded-full ${a.severity === "critical" ? "bg-destructive" : "bg-warning"}`} />
+                <span className="min-w-0">
+                  <span className="line-clamp-1">{a.title}</span>
+                  <span className="text-xs text-muted-foreground">{fmtAgo(a.created_at)}</span>
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <div className="space-y-6">
+        <section>
+          <h2 className="mb-2.5 text-sm font-medium text-muted-foreground">Customers & leads</h2>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard label="Total customers" value={fmtNumber(m.customers)} icon={Users} href="/conversations" />
+            <StatCard label="New leads today" value={fmtNumber(m.newLeadsToday)} icon={UserPlus} href="/leads?view=new" />
+            <StatCard label="Qualified leads" value={fmtNumber(m.qualified)} sub={`last ${days} days`} icon={UserCheck} href="/leads?view=qualified" />
+            <StatCard label="Active conversations" value={fmtNumber(m.activeConversations)} sub="within the 24h window" icon={MessagesSquare} href="/conversations?view=open" />
+          </div>
+        </section>
+        <section>
+          <h2 className="mb-2.5 text-sm font-medium text-muted-foreground">Messages & automation</h2>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard label="Messages received" value={fmtNumber(m.received)} sub={`last ${days} days`} icon={Inbox} />
+            <StatCard label="Messages sent" value={fmtNumber(m.sent)} sub={`last ${days} days`} icon={Send} />
+            <StatCard label="Flows running" value={fmtNumber(m.flowsActive)} sub={`${fmtNumber(m.inProgress)} conversations in progress`} icon={Workflow} href="/flows" />
+            <StatCard
+              label="Automation errors"
+              value={fmtNumber(m.errors)}
+              sub={`last ${days} days`}
+              icon={AlertTriangle}
+              href="/logs?status=failed"
+              tone={m.errors > 0 ? "critical" : "default"}
+            />
+          </div>
+        </section>
+        <section>
+          <h2 className="mb-2.5 text-sm font-medium text-muted-foreground">Usage & cost</h2>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard
+              label="CRM sync"
+              value={`${fmtNumber(m.crm.synced)} synced`}
+              sub={`${fmtNumber(m.crm.pending)} pending · ${fmtNumber(m.crm.failed)} failed`}
+              icon={Webhook}
+              href="/leads?view=crm_failed"
+              tone={m.crm.failed > 0 ? "warning" : "default"}
+            />
+            <StatCard
+              label="QStash usage today"
+              value={fmtNumber(m.qstashToday.value)}
+              sub={m.qstashLimit ? `of ${fmtNumber(m.qstashLimit)} / day (${Math.round((qstashPct ?? 0) * 100)}%)` : "no allowance set"}
+              icon={CalendarClock}
+              source={m.qstashToday.source === "unavailable" ? "local_measured" : m.qstashToday.source}
+              href="/usage"
+              tone={qstashPct !== null && qstashPct >= 0.85 ? "warning" : "default"}
+            />
+            <StatCard
+              label="Redis usage this month"
+              value={fmtNumber(m.redisMonth.value)}
+              sub={m.redisLimit ? `of ${fmtNumber(m.redisLimit)} commands (${Math.round((redisPct ?? 0) * 100)}%)` : undefined}
+              icon={Database}
+              source={m.redisMonth.source === "unavailable" ? "estimate" : m.redisMonth.source}
+              href="/usage"
+            />
+            <StatCard
+              label="Est. WhatsApp cost (month)"
+              value={m.meta.estimatedCost === null ? "Unavailable" : fmtMoney(m.meta.estimatedCost, m.meta.rate?.currency ?? "USD")}
+              sub={`${fmtNumber(m.meta.billable)} billable messages reported by Meta`}
+              icon={IndianRupee}
+              source={m.meta.rate ? "manual" : "unavailable"}
+              href="/usage"
+            />
+          </div>
+        </section>
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
@@ -143,8 +183,8 @@ export default async function OverviewPage({ searchParams }: PageProps<"/overvie
         </Card>
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+      <div className="mt-4">
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-sm">Recent leads</CardTitle>
             <Link href="/leads" className="text-xs text-muted-foreground hover:text-foreground">
@@ -171,28 +211,6 @@ export default async function OverviewPage({ searchParams }: PageProps<"/overvie
                 ))}
               </ul>
             )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Needs attention</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {m.needsReply > 0 && (
-              <Link href="/conversations?view=handoff" className="block rounded-xl border border-warning/30 bg-warning/5 p-3 text-sm">
-                <span className="font-medium">{m.needsReply}</span> conversation{m.needsReply === 1 ? "" : "s"} waiting for your team
-              </Link>
-            )}
-            {(alerts ?? []).map((a) => (
-              <Link key={a.id} href={a.link ?? "#"} className="block rounded-xl border p-3 text-sm hover:bg-muted/40">
-                <div className="flex items-center gap-2">
-                  <span className={`size-2 rounded-full ${a.severity === "critical" ? "bg-destructive" : "bg-warning"}`} />
-                  <span className="line-clamp-1">{a.title}</span>
-                </div>
-                <div className="mt-0.5 pl-4 text-xs text-muted-foreground">{fmtAgo(a.created_at)}</div>
-              </Link>
-            ))}
-            {m.needsReply === 0 && !alerts?.length && <p className="text-sm text-muted-foreground">Nothing needs attention right now.</p>}
           </CardContent>
         </Card>
       </div>

@@ -1,7 +1,7 @@
 import { resumeWithInput, startExecution } from "@/lib/engine/runner";
 import { selectTrigger } from "@/lib/engine/trigger";
 import { isWindowOpen } from "@/lib/engine/window";
-import type { ContactSnapshot, ConversationSnapshot, EngineDeps, FlowVersionRecord, InboundInput } from "@/lib/engine/types";
+import type { ContactSnapshot, ConversationSnapshot, EngineDeps, ExecutionRecord, FlowVersionRecord, InboundInput } from "@/lib/engine/types";
 import type { AppStore, Limiter, PendingInbound } from "./types";
 
 export interface PipelineDeps extends EngineDeps {
@@ -113,9 +113,26 @@ async function stopExecution(deps: PipelineDeps, executionId: string, status: "c
   }
 }
 
+function loadStartData(store: AppStore, conversation: ConversationSnapshot, contact: ContactSnapshot) {
+  return Promise.all([store.listTriggerCandidates(conversation.isTest), store.countPriorExecutions(contact.id)]);
+}
+
+/**
+ * Reads for steps 5–6, fetched together with the rate-limit check so a reply
+ * needs fewer sequential round trips. They have no side effects: when an
+ * earlier step returns, they only cost a wasted read.
+ */
+async function prefetchFlowData(store: AppStore, active: ExecutionRecord | null, conversation: ConversationSnapshot, contact: ContactSnapshot) {
+  if (active) {
+    const [status, version] = await Promise.all([store.getFlowStatus(active.flowId), store.getFlowVersion(active.flowVersionId)]);
+    return { status, version, start: null };
+  }
+  return { status: null, version: null, start: await loadStartData(store, conversation, contact) };
+}
+
 async function handleInbound(deps: PipelineDeps, conversationId: string, msg: PendingInbound) {
   const { store, settings } = deps;
-  const ctx = await store.getConversationContext(conversationId);
+  const [ctx, active] = await Promise.all([store.getConversationContext(conversationId), store.getActiveExecution(conversationId)]);
   if (!ctx) {
     await store.markInbound(msg.id, "ignored", "conversation_not_found");
     return;
@@ -132,11 +149,14 @@ async function handleInbound(deps: PipelineDeps, conversationId: string, msg: Pe
   // 1. Per-customer throttling. Runs only for signature-verified events and is
   //    keyed by the sender's WhatsApp ID — never by Meta's IP addresses.
   //    The message itself is already durably stored, so nothing is lost.
-  const rl = await deps.limiter.limit(contact.waId, {
-    prefix: "inbound",
-    tokens: settings.rateLimits.inboundPerMinute,
-    windowSeconds: 60,
-  });
+  const [rl, flow] = await Promise.all([
+    deps.limiter.limit(contact.waId, {
+      prefix: "inbound",
+      tokens: settings.rateLimits.inboundPerMinute,
+      windowSeconds: 60,
+    }),
+    prefetchFlowData(store, active, conversation, contact),
+  ]);
   await store.incrementUsage({
     service: "redis",
     metric: "commands",
@@ -172,7 +192,6 @@ async function handleInbound(deps: PipelineDeps, conversationId: string, msg: Pe
 
   // 3. Global keywords: STOP / START / HUMAN.
   const kw = keyword(input.replyTitle ?? input.text);
-  const active = await store.getActiveExecution(conversationId);
   const isKw = (list: string[]) => kw.length > 0 && list.some((k) => keyword(k) === kw);
 
   if (isKw(settings.keywords.stop)) {
@@ -237,7 +256,7 @@ async function handleInbound(deps: PipelineDeps, conversationId: string, msg: Pe
 
   // 5. Resume the active execution when appropriate.
   if (active) {
-    const flowStatus = await store.getFlowStatus(active.flowId);
+    const flowStatus = flow.status;
     const stale = now.getTime() - new Date(active.lastActivityAt).getTime();
     if (flowStatus !== "active" && flowStatus !== "testing") {
       await stopExecution(deps, active.id, "cancelled", `Flow is ${flowStatus ?? "missing"}`);
@@ -245,7 +264,7 @@ async function handleInbound(deps: PipelineDeps, conversationId: string, msg: Pe
     } else if (active.status === "waiting_input" && stale > settings.execution.resumeWithinHours * 3_600_000) {
       await store.setExecutionStatus(active.id, "abandoned", "Customer replied after the resume window");
     } else if (active.status === "waiting_input") {
-      const version = await store.getFlowVersion(active.flowVersionId);
+      const version = flow.version;
       if (!version) throw new Error("Flow version missing for active execution");
       const exec = await resumeWithInput(deps, { execution: active, version, conversation, contact, input });
       await store.markInbound(msg.id, "processed", "answer", exec.id);
@@ -264,8 +283,9 @@ async function handleInbound(deps: PipelineDeps, conversationId: string, msg: Pe
   }
 
   // 6. Start a flow — only ever in response to this customer message.
-  const candidates = await store.listTriggerCandidates(conversation.isTest);
-  const isNewCustomer = (await store.countPriorExecutions(contact.id)) === 0;
+  // Prefetched unless an active execution was just ended above.
+  const [candidates, priorExecutions] = flow.start ?? (await loadStartData(store, conversation, contact));
+  const isNewCustomer = priorExecutions === 0;
   const selected = selectTrigger(candidates, input, isNewCustomer);
   if (!selected) {
     await store.markInbound(msg.id, "processed", "no_matching_flow");

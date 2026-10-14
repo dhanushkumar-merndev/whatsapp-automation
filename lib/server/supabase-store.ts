@@ -173,18 +173,75 @@ export function toIntegration(r: Row): CrmIntegrationRecord {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+// Per-instance caches on the reply path. Published flow versions never change
+// (only the flow name can, so it may lag a rename by up to the TTL); accounts
+// follow the same 30 s rule as settings and are cleared when an admin edits them.
+const VERSION_TTL_MS = 10 * 60_000;
+const VERSION_CACHE_MAX = 50;
+const versionCache = new Map<string, { at: number; value: FlowVersionRecord }>();
+const ACCOUNT_TTL_MS = 30_000;
+const accountCache = new Map<string, { at: number; value: AccountRecord | null }>();
+
+export function invalidateAccountCache() {
+  accountCache.clear();
+}
+
+export interface SupabaseStoreOptions {
+  /**
+   * Node logs, usage counters, notifications and the conversation's
+   * last-outbound time are written without blocking the caller, so replies go
+   * out sooner. Nothing reads them back mid-run. Callers must await flush().
+   */
+  backgroundWrites?: boolean;
+}
+
 /** Production persistence (service role; callers are authenticated by signature/secret). */
 export class SupabaseStore implements AppStore {
-  constructor(private readonly db: SupabaseClient = createAdminClient()) {}
+  private readonly backgroundWrites: boolean;
+  private readonly pending = new Set<Promise<void>>();
+  /** Node logs are listed by id, so their inserts stay in order. */
+  private logChain: Promise<void> = Promise.resolve();
+
+  constructor(
+    private readonly db: SupabaseClient = createAdminClient(),
+    opts: SupabaseStoreOptions = {},
+  ) {
+    this.backgroundWrites = opts.backgroundWrites ?? false;
+  }
+
+  /** Waits for every background write, including ones started while waiting. */
+  async flush() {
+    while (this.pending.size) await Promise.all([...this.pending]);
+  }
+
+  /** Runs a write that nothing reads back mid-run: in the background when enabled (errors are logged), otherwise inline. */
+  private telemetry(what: string, write: () => Promise<void>): Promise<void> {
+    if (!this.backgroundWrites) return write();
+    this.defer(what, write);
+    return Promise.resolve();
+  }
+
+  private defer(what: string, write: () => Promise<void>): Promise<void> {
+    const p: Promise<void> = Promise.resolve()
+      .then(write)
+      .catch((e) => console.warn(`[store] ${what} failed`, e instanceof Error ? e.message : String(e)))
+      .finally(() => this.pending.delete(p));
+    this.pending.add(p);
+    return p;
+  }
 
   // --- Inbound ---------------------------------------------------------------
 
   async getAccountByPhoneNumberId(phoneNumberId: string): Promise<AccountRecord | null> {
+    const hit = accountCache.get(phoneNumberId);
+    if (hit && Date.now() - hit.at < ACCOUNT_TTL_MS) return hit.value;
     const data = check(
       await this.db.from("whatsapp_accounts").select("id, name, waba_id, phone_number_id, enabled").eq("phone_number_id", phoneNumberId).maybeSingle(),
       "load account",
     );
-    return data ? { id: data.id, name: data.name, wabaId: data.waba_id, phoneNumberId: data.phone_number_id, enabled: data.enabled } : null;
+    const value = data ? { id: data.id, name: data.name, wabaId: data.waba_id, phoneNumberId: data.phone_number_id, enabled: data.enabled } : null;
+    accountCache.set(phoneNumberId, { at: Date.now(), value });
+    return value;
   }
 
   async recordInbound(input: InboundRecordInput): Promise<InboundRecordResult> {
@@ -272,19 +329,24 @@ export class SupabaseStore implements AppStore {
   }
 
   async getConversationContext(conversationId: string) {
+    // The latest open enquiry is embedded so the whole context is one round trip.
     const r = check(
       await this.db
         .from("conversations")
         .select(
-          "id, contact_id, account_id, status, last_inbound_at, is_test, whatsapp_accounts(phone_number_id), contacts(id, wa_id, name, profile_name, business_name, email, opted_out, cooldown_until, is_test)",
+          "id, contact_id, account_id, status, last_inbound_at, is_test, whatsapp_accounts(phone_number_id), contacts(id, wa_id, name, profile_name, business_name, email, opted_out, cooldown_until, is_test, leads(created_at))",
         )
         .eq("id", conversationId)
+        .in("contacts.leads.status", [...OPEN_LEAD_STATUSES])
+        .order("created_at", { referencedTable: "contacts.leads", ascending: false })
+        .limit(1, { referencedTable: "contacts.leads" })
         .maybeSingle(),
       "load conversation",
     );
     if (!r) return null;
     const acc = (Array.isArray(r.whatsapp_accounts) ? r.whatsapp_accounts[0] : r.whatsapp_accounts) as { phone_number_id: string };
     const c = (Array.isArray(r.contacts) ? r.contacts[0] : r.contacts) as Row;
+    const openLead = ((c.leads as { created_at: string }[] | null) ?? [])[0];
     const conversation: ConversationSnapshot = {
       id: r.id,
       contactId: r.contact_id,
@@ -304,20 +366,8 @@ export class SupabaseStore implements AppStore {
       optedOut: Boolean(c.opted_out),
       cooldownUntil: (c.cooldown_until as string) ?? null,
       isTest: Boolean(c.is_test),
-      openEnquiryAt: null,
+      openEnquiryAt: openLead?.created_at ?? null,
     };
-    const openLead = check(
-      await this.db
-        .from("leads")
-        .select("created_at")
-        .eq("contact_id", contact.id)
-        .in("status", [...OPEN_LEAD_STATUSES])
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      "load open enquiry",
-    );
-    contact.openEnquiryAt = (openLead?.created_at as string) ?? null;
     return { conversation, contact };
   }
 
@@ -341,6 +391,8 @@ export class SupabaseStore implements AppStore {
   }
 
   async getFlowVersion(versionId: string): Promise<FlowVersionRecord | null> {
+    const hit = versionCache.get(versionId);
+    if (hit && Date.now() - hit.at < VERSION_TTL_MS) return hit.value;
     // flows ↔ flow_versions are linked twice (flow_id and flows.published_version_id): name the FK.
     const r = check(
       await this.db
@@ -352,7 +404,17 @@ export class SupabaseStore implements AppStore {
     );
     if (!r) return null;
     const flow = (Array.isArray(r.flows) ? r.flows[0] : r.flows) as { name: string } | null;
-    return { id: r.id, flowId: r.flow_id, version: r.version, flowName: flow?.name ?? "Flow", definition: flowDefinitionSchema.parse(r.definition) };
+    const value: FlowVersionRecord = {
+      id: r.id,
+      flowId: r.flow_id,
+      version: r.version,
+      flowName: flow?.name ?? "Flow",
+      definition: flowDefinitionSchema.parse(r.definition),
+    };
+    versionCache.delete(versionId);
+    if (versionCache.size >= VERSION_CACHE_MAX) versionCache.delete(versionCache.keys().next().value!);
+    versionCache.set(versionId, { at: Date.now(), value });
+    return value;
   }
 
   async getFlowStatus(flowId: string) {
@@ -499,20 +561,23 @@ export class SupabaseStore implements AppStore {
   }
 
   async logNode(entry: NodeLogEntry) {
-    check(
-      await this.db.from("node_executions").insert({
-        execution_id: entry.executionId,
-        node_id: entry.nodeId,
-        node_type: entry.nodeType,
-        step: entry.step,
-        status: entry.status,
-        output_handle: entry.outputHandle ?? null,
-        detail: entry.detail ?? null,
-        error: entry.error ?? null,
-        duration_ms: entry.durationMs ?? null,
-      }),
-      "log node",
-    );
+    const row = {
+      execution_id: entry.executionId,
+      node_id: entry.nodeId,
+      node_type: entry.nodeType,
+      step: entry.step,
+      status: entry.status,
+      output_handle: entry.outputHandle ?? null,
+      detail: entry.detail ?? null,
+      error: entry.error ?? null,
+      duration_ms: entry.durationMs ?? null,
+    };
+    const write = async () => {
+      check(await this.db.from("node_executions").insert(row), "log node");
+    };
+    if (!this.backgroundWrites) return write();
+    const previous = this.logChain;
+    this.logChain = this.defer("log node", () => previous.then(write));
   }
 
   async claimOutbound(claim: OutboundClaim): Promise<ClaimResult> {
@@ -551,7 +616,12 @@ export class SupabaseStore implements AppStore {
         "complete outbound",
       );
       const conv = rows?.[0]?.conversation_id;
-      if (conv) await this.db.from("conversations").update({ last_outbound_at: new Date().toISOString() }).eq("id", conv);
+      if (conv) {
+        const at = new Date().toISOString();
+        await this.telemetry("touch conversation", async () => {
+          await this.db.from("conversations").update({ last_outbound_at: at }).eq("id", conv);
+        });
+      }
     } else {
       check(
         await this.db
@@ -708,7 +778,7 @@ export class SupabaseStore implements AppStore {
   }
 
   async incrementUsage(input: UsageIncrement) {
-    const { error } = await this.db.rpc("increment_usage", {
+    const args = {
       p_service: input.service,
       p_metric: input.metric,
       p_day: today(),
@@ -716,13 +786,16 @@ export class SupabaseStore implements AppStore {
       p_flow_id: input.flowId ?? null,
       p_is_test: input.isTest ?? false,
       p_quantity: input.quantity ?? 1,
+    };
+    await this.telemetry("usage increment", async () => {
+      const { error } = await this.db.rpc("increment_usage", args);
+      // Usage telemetry must never break message handling.
+      if (error) console.warn("[usage] increment failed", error.message);
     });
-    // Usage telemetry must never break message handling.
-    if (error) console.warn("[usage] increment failed", error.message);
   }
 
   async notify(input: NotificationInput) {
-    const { error } = await this.db.from("notifications").insert({
+    const row = {
       kind: input.kind,
       severity: input.severity,
       title: input.title.slice(0, 200),
@@ -730,9 +803,12 @@ export class SupabaseStore implements AppStore {
       link: input.link ?? null,
       entity_type: input.entityType ?? null,
       entity_id: input.entityId ?? null,
+    };
+    await this.telemetry("notify", async () => {
+      const { error } = await this.db.from("notifications").insert(row);
+      if (error) console.warn("[notify] failed", error.message);
+      await this.forwardToTelegram(input);
     });
-    if (error) console.warn("[notify] failed", error.message);
-    await this.forwardToTelegram(input);
   }
 
   /** Sends the alert to Telegram when a bot token is set and that alert type is switched on. Never throws. */

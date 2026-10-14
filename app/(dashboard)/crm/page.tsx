@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Plug } from "lucide-react";
 import { PageHeader } from "@/components/common/page-header";
 import { EmptyState } from "@/components/common/empty-state";
+import { CopyButton } from "@/components/common/copy-button";
 import { StatusBadge } from "@/components/common/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -40,7 +41,7 @@ export default async function CrmPage() {
       {!integrations?.length ? (
         <EmptyState icon={Plug} title="No CRM connected" description="Add the receiving webhook URL from your CRM. Leads are stored here even if the CRM is down." action={<IntegrationForm />} />
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
           {integrations.map((i) => (
             <Card key={i.id}>
               <CardHeader>
@@ -50,7 +51,12 @@ export default async function CrmPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
-                <div className="truncate font-mono text-xs text-muted-foreground">{i.url}</div>
+                <div className="flex items-center gap-1 rounded-xl bg-muted py-1 pr-1 pl-3">
+                  <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground" title={i.url}>
+                    {i.url}
+                  </span>
+                  <CopyButton value={i.url} label="" />
+                </div>
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                   <span>Auth: {i.auth_type}</span>
                   <span>Signed: {flags.get(i.id)?.sig ? "yes" : "no"}</span>

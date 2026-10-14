@@ -2,9 +2,10 @@ import type { Metadata } from "next";
 import { AlertTriangle, Smartphone } from "lucide-react";
 import { PageHeader } from "@/components/common/page-header";
 import { EmptyState } from "@/components/common/empty-state";
+import { CopyButton } from "@/components/common/copy-button";
 import { StatusBadge } from "@/components/common/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AccountForm, TestAccountButton } from "@/components/whatsapp/account-form";
+import { AccountForm, TestAccountButton, DeleteAccountButton } from "@/components/whatsapp/account-form";
 import { requirePageSession } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { fmtAgo } from "@/lib/format";
@@ -28,7 +29,10 @@ export default async function WhatsAppPage() {
         <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
           <div>
             <div className="text-xs text-muted-foreground">Callback URL</div>
-            <code className="mt-1 block rounded-xl bg-muted px-3 py-2 text-xs break-all">{appUrl}/api/webhooks/whatsapp</code>
+            <div className="mt-1 flex items-center gap-1 rounded-xl bg-muted py-1 pr-1 pl-3">
+              <code className="min-w-0 flex-1 text-xs break-all">{appUrl}/api/webhooks/whatsapp</code>
+              <CopyButton value={`${appUrl}/api/webhooks/whatsapp`} />
+            </div>
           </div>
           <div>
             <div className="text-xs text-muted-foreground">Verify token</div>
@@ -41,9 +45,14 @@ export default async function WhatsAppPage() {
         </CardContent>
       </Card>
       {!accounts?.length ? (
-        <EmptyState icon={Smartphone} title="No numbers registered" description="Run `pnpm db:seed` or add your number." action={<AccountForm />} />
+        <EmptyState
+          icon={Smartphone}
+          title="No WhatsApp number yet"
+          description="Add your Meta WhatsApp Cloud API number to start receiving customer messages."
+          action={<AccountForm />}
+        />
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
           {accounts.map((a) => (
             <Card key={a.id}>
               <CardHeader>
@@ -64,11 +73,11 @@ export default async function WhatsAppPage() {
                   </div>
                   <div>
                     <div className="text-muted-foreground">WABA ID</div>
-                    <span className="font-mono">{a.waba_id}</span>
+                    <span className="font-mono break-all">{a.waba_id}</span>
                   </div>
                   <div>
                     <div className="text-muted-foreground">Phone number ID</div>
-                    <span className="font-mono">{a.phone_number_id}</span>
+                    <span className="font-mono break-all">{a.phone_number_id}</span>
                   </div>
                   <div>
                     <div className="text-muted-foreground">Last verified</div>
@@ -80,9 +89,10 @@ export default async function WhatsAppPage() {
                     <AlertTriangle className="mt-0.5 size-3.5 shrink-0" /> This WABA ID differs from META_WABA_ID; its webhook events will be rejected.
                   </p>
                 )}
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <TestAccountButton id={a.id} />
                   <AccountForm initial={{ id: a.id, name: a.name, wabaId: a.waba_id, phoneNumberId: a.phone_number_id, enabled: a.enabled }} />
+                  {!a.enabled && <DeleteAccountButton id={a.id} name={a.verified_name ?? a.name} />}
                 </div>
               </CardContent>
             </Card>

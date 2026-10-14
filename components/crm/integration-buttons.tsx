@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, PlugZap, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/common/confirm-dialog";
 import { deleteIntegrationAction, retryDeliveryAction, testIntegrationAction } from "@/app/(dashboard)/crm/actions";
 
 export function TestIntegrationButton({ id }: { id: string }) {
@@ -33,14 +34,21 @@ export function TestIntegrationButton({ id }: { id: string }) {
 export function DeleteIntegrationButton({ id, name }: { id: string; name: string }) {
   const router = useRouter();
   const [pending, start] = useTransition();
+  const confirm = useConfirm();
   return (
     <Button
       variant="ghost"
       size="sm"
       className="text-destructive"
       disabled={pending}
-      onClick={() => {
-        if (!confirm(`Delete "${name}" and its delivery history?`)) return;
+      onClick={async () => {
+        const ok = await confirm({
+          title: `Delete “${name}”?`,
+          description: "Its delivery history is deleted too. Leads stay in this app.",
+          confirmLabel: "Delete",
+          destructive: true,
+        });
+        if (!ok) return;
         start(async () => {
           const r = await deleteIntegrationAction({ id });
           if (!r.ok) toast.error(r.error);

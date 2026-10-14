@@ -5,6 +5,7 @@ import { History, Undo2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { useConfirm } from "@/components/common/confirm-dialog";
 import { rollbackFlowAction, restoreVersionToDraftAction } from "@/app/(dashboard)/flows/actions";
 import { fmtDate } from "@/lib/format";
 import { LevelPill } from "./usage-report";
@@ -33,6 +34,7 @@ export function VersionHistory({
   onDraftReplaced: () => void;
 }) {
   const [pending, start] = useTransition();
+  const confirm = useConfirm();
 
   const run = (fn: () => Promise<{ ok: boolean; error?: string }>, success: string) =>
     start(async () => {
@@ -47,8 +49,8 @@ export function VersionHistory({
   return (
     <Sheet>
       <SheetTrigger asChild>
-        <Button variant="ghost" size="sm">
-          <History /> Versions
+        <Button variant="ghost" size="sm" aria-label="Version history" className="max-xl:size-8 max-xl:px-0">
+          <History /> <span className="max-xl:sr-only">Versions</span>
         </Button>
       </SheetTrigger>
       <SheetContent className="w-full sm:max-w-md">
@@ -63,10 +65,10 @@ export function VersionHistory({
           {versions.map((v) => {
             const live = v.id === liveVersionId;
             return (
-              <div key={v.id} className="rounded-lg border p-3">
+              <div key={v.id} className="rounded-2xl border p-3.5">
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-medium">
-                    Version {v.version} {live && <span className="ml-1 rounded bg-success/10 px-1.5 py-0.5 text-[10px] text-success">LIVE</span>}
+                    Version {v.version} {live && <span className="ml-1 rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-medium text-success">Live</span>}
                   </div>
                   {v.level && <LevelPill level={v.level} />}
                 </div>
@@ -81,10 +83,13 @@ export function VersionHistory({
                       size="xs"
                       variant="outline"
                       disabled={pending}
-                      onClick={() => {
-                        if (confirm(`Make version ${v.version} the live version? New conversations will use it immediately.`)) {
-                          run(() => rollbackFlowAction({ flowId, versionId: v.id }), `Version ${v.version} is live again`);
-                        }
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: `Make version ${v.version} live?`,
+                          description: "New conversations will use it immediately. Conversations already running keep their version.",
+                          confirmLabel: "Make live",
+                        });
+                        if (ok) run(() => rollbackFlowAction({ flowId, versionId: v.id }), `Version ${v.version} is live again`);
                       }}
                     >
                       <Undo2 /> Roll back to this
@@ -94,10 +99,16 @@ export function VersionHistory({
                     size="xs"
                     variant="ghost"
                     disabled={pending}
-                    onClick={() => {
-                      if (!dirty || confirm("Replace your unsaved draft with this version?")) {
-                        run(() => restoreVersionToDraftAction({ flowId, versionId: v.id }), `Version ${v.version} loaded into the draft`);
-                      }
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: `Load version ${v.version} into the draft?`,
+                        description: dirty
+                          ? "This replaces your current draft, including changes that haven't saved yet. The live version doesn't change."
+                          : "This replaces your current draft. The live version doesn't change until you publish.",
+                        confirmLabel: "Load version",
+                        destructive: dirty,
+                      });
+                      if (ok) run(() => restoreVersionToDraftAction({ flowId, versionId: v.id }), `Version ${v.version} loaded into the draft`);
                     }}
                   >
                     <Upload /> Load into draft

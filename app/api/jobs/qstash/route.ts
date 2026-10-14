@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return Response.json({ ok: false, error: "invalid job body" });
 
   const retried = Number(req.headers.get("upstash-retried") ?? 0) || 0;
-  const deps = await createPipelineDeps("jobs.qstash");
+  const deps = await createPipelineDeps("jobs.qstash", { backgroundWrites: true });
   try {
     const outcome = await handleScheduledJob(deps, parsed.data.jobId, { retried });
     if (outcome.status === "retry") return new Response(outcome.detail, { status: 503 });
@@ -39,5 +39,7 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     log.error("job failed", { jobId: parsed.data.jobId, error: e instanceof Error ? e.message : String(e) });
     return new Response("Job failed", { status: 500 });
+  } finally {
+    await deps.store.flush();
   }
 }

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { audit, requireAdmin, runAction } from "@/lib/auth/guard";
 import { fetchPhoneNumberInfo } from "@/lib/whatsapp/graph";
+import { invalidateAccountCache } from "@/lib/server/supabase-store";
 
 const accountSchema = z.object({
   id: z.uuid().nullable(),
@@ -22,6 +23,7 @@ export async function saveAccountAction(input: z.input<typeof accountSchema>) {
     const row = { name: v.name, waba_id: v.wabaId, phone_number_id: v.phoneNumberId, enabled: v.enabled };
     const res = v.id ? await supabase.from("whatsapp_accounts").update(row).eq("id", v.id) : await supabase.from("whatsapp_accounts").insert(row);
     if (res.error) throw new Error(res.error.code === "23505" ? "This phone number ID is already registered." : res.error.message);
+    invalidateAccountCache();
     await audit(session, v.id ? "whatsapp_account.updated" : "whatsapp_account.created", { type: "whatsapp_account", id: v.id }, row);
     revalidatePath("/whatsapp");
   });
@@ -49,5 +51,26 @@ export async function testAccountAction(input: { id: string }) {
     await audit(session, "whatsapp_account.tested", { type: "whatsapp_account", id });
     revalidatePath("/whatsapp");
     return info;
+  });
+}
+
+/** Removes a disabled number. Numbers with conversation history are kept (the FK is ON DELETE RESTRICT). */
+export async function deleteAccountAction(input: { id: string }) {
+  return runAction(async () => {
+    const session = await requireAdmin({ limit: { prefix: "admin_write", tokens: 60, windowSeconds: 60 } });
+    const id = z.uuid().parse(input.id);
+    const supabase = await createClient();
+    const { data: acc } = await supabase.from("whatsapp_accounts").select("name, enabled").eq("id", id).maybeSingle();
+    if (!acc) throw new Error("Account not found");
+    if (acc.enabled) throw new Error("Disable this number before removing it.");
+    const { error } = await supabase.from("whatsapp_accounts").delete().eq("id", id);
+    if (error) {
+      throw new Error(
+        error.code === "23503" ? "This number has conversation history, so it can't be removed. It stays disabled instead." : error.message,
+      );
+    }
+    invalidateAccountCache();
+    await audit(session, "whatsapp_account.deleted", { type: "whatsapp_account", id }, { name: acc.name });
+    revalidatePath("/whatsapp");
   });
 }

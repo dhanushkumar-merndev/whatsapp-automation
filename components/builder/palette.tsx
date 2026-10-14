@@ -29,7 +29,7 @@ export function Palette({ onAdd, hasTrigger }: { onAdd: (type: NodeType) => void
           <Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search nodes" className="h-9 rounded-full bg-muted pl-8 text-sm border-transparent" />
         </div>
-        <p className="mt-2 text-[11px] text-muted-foreground">Drag onto the canvas or click to add.</p>
+        <p className="mt-2 text-[11px] text-muted-foreground">Click to add after the selected step, or drag onto the canvas.</p>
       </div>
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-4 p-3">
@@ -54,10 +54,10 @@ export function Palette({ onAdd, hasTrigger }: { onAdd: (type: NodeType) => void
                       }}
                       onClick={() => onAdd(d.type)}
                       title={d.description}
-                      className="flex w-full items-start gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                      className="flex w-full items-start gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-muted active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded" style={{ background: `${d.color}1a`, color: d.color }}>
-                        <Icon className="size-3.5" />
+                      <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted">
+                        <Icon className="size-3.5" strokeWidth={1.75} />
                       </span>
                       <span className="min-w-0">
                         <span className="block text-[13px] font-medium">{d.label}</span>

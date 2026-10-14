@@ -3,6 +3,8 @@ import Link from "next/link";
 import { ScrollText } from "lucide-react";
 import { PageHeader } from "@/components/common/page-header";
 import { EmptyState } from "@/components/common/empty-state";
+import { LinkSelect } from "@/components/common/link-select";
+import { SegmentedNav } from "@/components/common/segmented-nav";
 import { StatusBadge } from "@/components/common/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -51,19 +53,24 @@ export default async function LogsPage({ searchParams }: PageProps<"/logs">) {
     content = (
       <div className="grid gap-4 lg:grid-cols-5">
         <Card className={cn("py-0", executionId ? "lg:col-span-3" : "lg:col-span-5")}>
-          <div className="flex flex-wrap gap-1.5 p-4">
-            <Link href={link({ status: "" })} className={cn("rounded-full border px-3 py-1 text-xs", !status ? "border-foreground bg-foreground text-background" : "hover:bg-muted")}>
-              All
-            </Link>
-            {STATUSES.map((s) => (
-              <Link key={s} href={link({ status: s })} className={cn("rounded-full border px-3 py-1 text-xs", status === s ? "border-foreground bg-foreground text-background" : "hover:bg-muted")}>
-                {s.replace(/_/g, " ")}
-              </Link>
-            ))}
+          <div className="flex items-center justify-between gap-3 p-4">
+            <div className="text-sm font-medium">Flow runs</div>
+            <LinkSelect
+              label="Filter by status"
+              value={status || "all"}
+              options={[
+                { value: "all", label: "All statuses", href: link({ status: "" }) },
+                ...STATUSES.map((s) => ({ value: s, label: s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, " "), href: link({ status: s }) })),
+              ]}
+            />
           </div>
           {!executions?.length ? (
             <div className="p-6">
-              <EmptyState icon={ScrollText} title="No executions" description="Executions appear when customers message your number." />
+              <EmptyState
+                icon={ScrollText}
+                title={status ? `No ${status.replace(/_/g, " ")} runs` : "No flow runs yet"}
+                description={status ? "Choose another status to see more." : "A run appears each time a customer starts one of your flows."}
+              />
             </div>
           ) : (
             <Table>
@@ -101,7 +108,7 @@ export default async function LogsPage({ searchParams }: PageProps<"/logs">) {
           )}
         </Card>
         {executionId && (
-          <Card className="lg:col-span-2">
+          <Card className="self-start lg:sticky lg:top-6 lg:col-span-2 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto">
             <CardHeader>
               <CardTitle className="flex items-center justify-between text-sm">
                 Execution trace
@@ -148,7 +155,9 @@ export default async function LogsPage({ searchParams }: PageProps<"/logs">) {
       .select("id, kind, status, run_at, attempts, last_error, qstash_message_id, execution_id, is_test, created_at")
       .order("created_at", { ascending: false })
       .limit(80);
-    content = (
+    content = !jobs?.length ? (
+      <EmptyState icon={ScrollText} title="No scheduled jobs" description="Jobs are created by Wait steps and CRM retries." />
+    ) : (
       <Card className="py-0">
         <Table>
           <TableHeader>
@@ -162,7 +171,7 @@ export default async function LogsPage({ searchParams }: PageProps<"/logs">) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {(jobs ?? []).map((j) => (
+            {jobs.map((j) => (
               <TableRow key={j.id}>
                 <TableCell className="text-sm">
                   {j.execution_id ? <Link href={link({ tab: "executions", execution: j.execution_id })} className="hover:underline">{j.kind}</Link> : j.kind}
@@ -183,7 +192,9 @@ export default async function LogsPage({ searchParams }: PageProps<"/logs">) {
     );
   } else {
     const { data: events } = await supabase.from("rate_limit_events").select("id, scope, action, identifier, detail, created_at").order("created_at", { ascending: false }).limit(100);
-    content = (
+    content = !events?.length ? (
+      <EmptyState icon={ScrollText} title="No security events" description="Blocked or rate-limited requests are listed here." />
+    ) : (
       <Card className="py-0">
         <Table>
           <TableHeader>
@@ -196,7 +207,7 @@ export default async function LogsPage({ searchParams }: PageProps<"/logs">) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {(events ?? []).map((e) => (
+            {events.map((e) => (
               <TableRow key={e.id}>
                 <TableCell className="text-xs text-muted-foreground">{fmtDate(e.created_at)}</TableCell>
                 <TableCell className="text-sm">{e.scope}</TableCell>
@@ -216,17 +227,10 @@ export default async function LogsPage({ searchParams }: PageProps<"/logs">) {
   return (
     <>
       <PageHeader title="Execution Logs" description="Every automation step, delayed job and security event — newest first." />
-      <div className="mb-4 inline-flex rounded-full bg-muted p-1">
-        {(Object.keys(TABS) as Tab[]).map((t) => (
-          <Link
-            key={t}
-            href={t === "executions" ? "/logs" : `/logs?tab=${t}`}
-            className={cn("rounded-full px-3.5 py-1 text-xs font-medium", tab === t ? "bg-background shadow-sm dark:bg-accent" : "text-muted-foreground hover:text-foreground")}
-          >
-            {TABS[t]}
-          </Link>
-        ))}
-      </div>
+      <SegmentedNav
+        className="mb-4"
+        items={(Object.keys(TABS) as Tab[]).map((t) => ({ href: t === "executions" ? "/logs" : `/logs?tab=${t}`, label: TABS[t], active: tab === t }))}
+      />
       {content}
     </>
   );
