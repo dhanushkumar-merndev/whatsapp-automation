@@ -49,7 +49,7 @@ export default async function FlowsPage({ searchParams }: PageProps<"/flows">) {
           </>
         }
       />
-      {error && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{error.message}</p>}
+      {error && <p className="mb-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error.message}</p>}
       {!flows?.length ? (
         <EmptyState
           icon={Workflow}
@@ -77,9 +77,9 @@ export default async function FlowsPage({ searchParams }: PageProps<"/flows">) {
                 const latest = versions.reduce((m, v) => Math.max(m, v.version), 0);
                 const snap = f.estimate_snapshot as EstimateSnapshot | null;
                 return (
-                  <TableRow key={f.id}>
+                  <TableRow key={f.id} className="relative">
                     <TableCell>
-                      <Link href={`/flows/${f.id}`} className="font-medium hover:underline">
+                      <Link href={`/flows/${f.id}`} className="font-medium after:absolute after:inset-0">
                         {f.name}
                       </Link>
                       {f.description && <div className="max-w-md truncate text-xs text-muted-foreground">{f.description}</div>}
@@ -103,7 +103,7 @@ export default async function FlowsPage({ searchParams }: PageProps<"/flows">) {
                       )}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{fmtAgo(f.draft_updated_at)}</TableCell>
-                    <TableCell>
+                    <TableCell className="relative z-10">
                       <FlowRowActions id={f.id} status={f.status} published={Boolean(f.published_version_id)} />
                     </TableCell>
                   </TableRow>

@@ -25,8 +25,8 @@ export function StatCard({
       className={cn(
         "h-full rounded-2xl border p-4 transition-colors",
         href && "hover:bg-muted/40",
-        tone === "warning" && "border-amber-200 bg-amber-50/50",
-        tone === "critical" && "border-red-200 bg-red-50/50",
+        tone === "warning" && "border-warning/30 bg-warning/5",
+        tone === "critical" && "border-destructive/30 bg-destructive/5",
       )}
     >
       <div className="flex items-center justify-between gap-2">

@@ -75,7 +75,7 @@ export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
       <div className="mb-4">
         <LeadFilters services={services} staff={(staff ?? []).map((s) => ({ id: s.id, name: s.full_name || s.email }))} />
       </div>
-      {error && <p className="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error.message}</p>}
+      {error && <p className="mb-4 rounded-xl bg-destructive/10 p-3 text-sm text-destructive">{error.message}</p>}
       {!leads?.length ? (
         <EmptyState icon={UsersRound} title="No leads match" description="Leads appear here as soon as customers answer your WhatsApp flow." />
       ) : (
@@ -93,9 +93,9 @@ export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
             </TableHeader>
             <TableBody>
               {leads.map((l) => (
-                <TableRow key={l.id} className="cursor-pointer">
+                <TableRow key={l.id} className="relative cursor-pointer">
                   <TableCell>
-                    <Link href={`/leads/${l.id}`} className="block">
+                    <Link href={`/leads/${l.id}`} className="block after:absolute after:inset-0">
                       <div className="font-medium">{l.name ?? "—"}</div>
                       <div className="text-xs text-muted-foreground">
                         {fmtPhone(l.phone)}

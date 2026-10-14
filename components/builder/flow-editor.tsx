@@ -1,6 +1,7 @@
 "use client";
 
 import "@xyflow/react/dist/style.css";
+import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -101,6 +102,7 @@ export function FlowEditor(props: FlowEditorProps) {
 }
 
 function EditorInner({ flow, versions, media, crm, plan, defaultAssumptions, settings }: FlowEditorProps) {
+  const { resolvedTheme } = useTheme();
   const router = useRouter();
   const rf = useReactFlow<EditorNode, EditorEdge>();
   const initial = useMemo(() => toEditor(flow.draftDefinition), [flow.draftDefinition]);
@@ -440,7 +442,7 @@ function EditorInner({ flow, versions, media, crm, plan, defaultAssumptions, set
 
   return (
     <EditorContext.Provider value={ctx}>
-      <div className="-mx-4 -my-6 flex h-[calc(100vh-3.5rem)] flex-col lg:-mx-8">
+      <div data-full-bleed className="flex h-[calc(100dvh-3.5rem)] flex-col lg:h-dvh">
         {/* Toolbar */}
         <div className="flex flex-wrap items-center gap-2 border-b bg-background px-3 py-2">
           <Button variant="ghost" size="icon-sm" asChild>
@@ -465,7 +467,7 @@ function EditorInner({ flow, versions, media, crm, plan, defaultAssumptions, set
           <StatusBadge status={flow.status} />
           {flow.liveVersion && <span className="text-xs text-muted-foreground">v{flow.liveVersion} live</span>}
           {dirty ? (
-            <span className="text-xs text-amber-700">● Unsaved changes</span>
+            <span className="text-xs text-warning">● Unsaved changes</span>
           ) : (
             <span className="text-xs text-muted-foreground">Saved</span>
           )}
@@ -583,16 +585,17 @@ function EditorInner({ flow, versions, media, crm, plan, defaultAssumptions, set
               snapToGrid
               snapGrid={[10, 10]}
               proOptions={{ hideAttribution: true }}
+              colorMode={resolvedTheme === "dark" ? "dark" : "light"}
               defaultEdgeOptions={{ type: "smoothstep" }}
             >
-              <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="#cbd5e1" />
+              <Background variant={BackgroundVariant.Dots} gap={18} size={1} />
               <Controls showInteractive={false} position="bottom-left" />
               <MiniMap
                 pannable
                 zoomable
                 position="bottom-right"
                 nodeColor={(n) => NODE_REGISTRY[(n.data as EditorNode["data"]).nodeType]?.color ?? "#94a3b8"}
-                className="!h-28 !w-44 rounded-md border"
+                className="!h-28 !w-44 overflow-hidden rounded-xl border"
               />
             </ReactFlow>
             {nodes.length <= 1 && (
@@ -611,7 +614,7 @@ function EditorInner({ flow, versions, media, crm, plan, defaultAssumptions, set
                 <TabsTrigger value="check">
                   Check
                   {issuesCount > 0 && (
-                    <span className={`ml-1 rounded px-1 text-[10px] ${validation.errors.length ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-800"}`}>
+                    <span className={`ml-1 rounded px-1 text-[10px] ${validation.errors.length ? "bg-destructive/15 text-destructive" : "bg-warning/15 text-warning"}`}>
                       {issuesCount}
                     </span>
                   )}

@@ -14,9 +14,9 @@ export function OtpField({ name = "code", onComplete }: { name?: string; onCompl
       containerClassName="justify-center"
       onComplete={onComplete}
     >
-      <InputOTPGroup>
+      <InputOTPGroup className="gap-2">
         {Array.from({ length: 6 }, (_, i) => (
-          <InputOTPSlot key={i} index={i} className="size-11 text-lg" />
+          <InputOTPSlot key={i} index={i} className="size-12 rounded-xl border text-lg first:rounded-xl last:rounded-xl" />
         ))}
       </InputOTPGroup>
     </InputOTP>

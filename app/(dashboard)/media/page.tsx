@@ -44,11 +44,11 @@ export default async function MediaPage() {
               </span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-muted">
-              <div className={cn("h-full rounded-full", pct >= 0.95 ? "bg-red-500" : pct >= 0.85 ? "bg-amber-500" : "bg-foreground")} style={{ width: `${Math.min(100, Math.max(pct * 100, 0.5))}%` }} />
+              <div className={cn("h-full rounded-full", pct >= 0.95 ? "bg-destructive" : pct >= 0.85 ? "bg-warning" : "bg-foreground")} style={{ width: `${Math.min(100, Math.max(pct * 100, 0.5))}%` }} />
             </div>
           </div>
           <SourceBadge source="measured" />
-          {pct >= 0.85 && <p className="w-full text-xs text-amber-800">Storage is above 85% of the configured allowance. Delete unused files or upgrade your Supabase plan.</p>}
+          {pct >= 0.85 && <p className="w-full text-xs text-warning">Storage is above 85% of the configured allowance. Delete unused files or upgrade your Supabase plan.</p>}
           <p className="w-full text-xs text-muted-foreground">Allowed: PDF (≤ 50 MB), JPG/PNG (≤ 5 MB), MP4/3GP video (≤ 16 MB).</p>
         </CardContent>
       </Card>

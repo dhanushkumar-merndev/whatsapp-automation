@@ -19,7 +19,7 @@ function shortDay(d: string) {
 function ChartTooltip({ active, payload, label, unit }: { active?: boolean; payload?: { name: string; value: number; color: string }[]; label?: string; unit?: string }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-xl border bg-background px-3 py-2 text-xs shadow-lg">
+    <div className="rounded-xl border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-lg">
       <div className="mb-1 text-muted-foreground">{label ? shortDay(label) : ""}</div>
       {payload.map((p) => (
         <div key={p.name} className="flex items-center gap-2">
@@ -51,16 +51,16 @@ export function TimeSeriesChart({
   unit?: string;
 }) {
   const colored = series.map((s, i) => ({ ...s, color: s.color ?? SERIES_COLORS[i] }));
-  const axis = { stroke: "#8f8f8f", fontSize: 11, tickLine: false, axisLine: false } as const;
+  const axis = { stroke: "var(--muted-foreground)", fontSize: 11, tickLine: false, axisLine: false } as const;
   const common = (
     <>
-      <CartesianGrid vertical={false} stroke="#ececec" />
+      <CartesianGrid vertical={false} stroke="var(--border)" />
       <XAxis dataKey="day" tickFormatter={shortDay} {...axis} minTickGap={24} />
       <YAxis allowDecimals={false} width={40} {...axis} />
-      <Tooltip content={<ChartTooltip unit={unit} />} cursor={{ fill: "rgba(0,0,0,0.04)", stroke: "#d4d4d4" }} />
-      {colored.length > 1 && <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12, color: "#5d5d5d" }} />}
+      <Tooltip content={<ChartTooltip unit={unit} />} cursor={{ fill: "var(--muted)", stroke: "var(--ring)" }} />
+      {colored.length > 1 && <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12, color: "var(--muted-foreground)" }} />}
       {reference && (
-        <ReferenceLine y={reference.value} stroke="#8f8f8f" strokeDasharray="4 4" label={{ value: reference.label, position: "insideTopRight", fontSize: 11, fill: "#5d5d5d" }} />
+        <ReferenceLine y={reference.value} stroke="var(--muted-foreground)" strokeDasharray="4 4" label={{ value: reference.label, position: "insideTopRight", fontSize: 11, fill: "var(--muted-foreground)" }} />
       )}
     </>
   );

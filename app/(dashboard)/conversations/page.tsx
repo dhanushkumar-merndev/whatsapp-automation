@@ -70,7 +70,7 @@ export default async function ConversationsPage({ searchParams }: PageProps<"/co
           <input name="q" defaultValue={q} placeholder="Search name or number" className="h-9 w-56 rounded-full border bg-background px-4 text-sm outline-none focus:ring-2 focus:ring-ring/40" />
         </form>
       </div>
-      {error && <p className="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error.message}</p>}
+      {error && <p className="mb-4 rounded-xl bg-destructive/10 p-3 text-sm text-destructive">{error.message}</p>}
       {!conversations?.length ? (
         <EmptyState icon={MessagesSquare} title="No conversations" description="Conversations start when a customer messages your WhatsApp number." />
       ) : (

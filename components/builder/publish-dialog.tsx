@@ -81,15 +81,15 @@ function PublishBody({ onOpenChange, flowId, flowName, definition, assumptions, 
             <Loader2 className="mr-2 size-4 animate-spin" /> Calculating usage report…
           </div>
         )}
-        {error && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+        {error && <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
 
         {data && r && (
           <div className="space-y-4">
             {!data.validation.ok && (
-              <div className="space-y-1 rounded-md border border-red-200 bg-red-50 p-3">
-                <div className="text-sm font-medium text-red-700">Fix these errors before publishing</div>
+              <div className="space-y-1 rounded-md border border-destructive/30 bg-destructive/10 p-3">
+                <div className="text-sm font-medium text-destructive">Fix these errors before publishing</div>
                 {data.validation.errors.map((e, i) => (
-                  <p key={i} className="flex gap-1.5 text-xs text-red-700">
+                  <p key={i} className="flex gap-1.5 text-xs text-destructive">
                     <CircleX className="mt-0.5 size-3 shrink-0" /> {e.message}
                   </p>
                 ))}
@@ -180,7 +180,7 @@ function PublishBody({ onOpenChange, flowId, flowName, definition, assumptions, 
               <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={500} placeholder="What changed?" />
             </div>
             {needsAck && (
-              <label className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-900">
+              <label className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 p-2.5 text-xs text-warning">
                 <Checkbox checked={ack} onCheckedChange={(v) => setAck(v === true)} className="mt-0.5" />
                 I have reviewed the usage warnings and want to publish anyway.
               </label>

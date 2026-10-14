@@ -159,7 +159,7 @@ export default async function LeadPage({ params }: PageProps<"/leads/[id]">) {
                   <div className="mt-1 text-xs text-muted-foreground">
                     {d.attempts} attempt(s){d.last_status_code ? ` · HTTP ${d.last_status_code}` : ""} · {fmtAgo(d.updated_at)}
                   </div>
-                  {d.last_error && <div className="mt-1 text-xs text-red-700">{d.last_error}</div>}
+                  {d.last_error && <div className="mt-1 text-xs text-destructive">{d.last_error}</div>}
                 </div>
               );
             })}

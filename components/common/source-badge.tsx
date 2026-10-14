@@ -1,30 +1,31 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { toneClass } from "./status-badge";
 
 /** Distinguishes provider-reported figures from local measurements and estimates. */
 const SOURCES = {
-  provider: { label: "Provider reported", cls: "bg-emerald-50 text-emerald-700 ring-emerald-600/20", tip: "Reported by the provider's API." },
+  provider: { label: "Provider reported", cls: toneClass("green"), tip: "Reported by the provider's API." },
   local_measured: {
     label: "Local count",
-    cls: "bg-blue-50 text-blue-700 ring-blue-600/20",
+    cls: toneClass("blue"),
     tip: "Counted by this application. Not an official provider billing figure.",
   },
   measured: {
     label: "Measured",
-    cls: "bg-blue-50 text-blue-700 ring-blue-600/20",
+    cls: toneClass("blue"),
     tip: "Measured directly from the database/storage. Not an official billing figure.",
   },
   estimate: {
     label: "Estimate",
-    cls: "bg-amber-50 text-amber-800 ring-amber-600/20",
+    cls: toneClass("amber"),
     tip: "Calculated from assumptions. Not live data.",
   },
   manual: {
     label: "Manually configured",
-    cls: "bg-violet-50 text-violet-700 ring-violet-600/20",
+    cls: toneClass("violet"),
     tip: "Entered by an administrator. Verify against your provider account.",
   },
-  unavailable: { label: "Unavailable", cls: "bg-muted text-muted-foreground ring-border", tip: "No data source is configured." },
+  unavailable: { label: "Unavailable", cls: toneClass("gray"), tip: "No data source is configured." },
 } as const;
 export type DataSource = keyof typeof SOURCES;
 

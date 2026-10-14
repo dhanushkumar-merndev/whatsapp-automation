@@ -27,6 +27,10 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-violet: var(--violet);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -65,6 +69,10 @@
   --accent: #f0f0f0;
   --accent-foreground: #0d0d0d;
   --destructive: #e02e2a;
+  --success: #047857;
+  --warning: #b45309;
+  --info: #1d4ed8;
+  --violet: #6d28d9;
   --border: #e5e5e5;
   --input: #e3e3e3;
   --ring: #b4b4b4;
@@ -85,37 +93,42 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* ChatGPT-style dark theme */
+  --background: #0d0d0d;
+  --foreground: #ececec;
+  --card: #171717;
+  --card-foreground: #ececec;
+  --popover: #262626;
+  --popover-foreground: #ececec;
+  --primary: #ffffff;
+  --primary-foreground: #0d0d0d;
+  --secondary: #2a2a2a;
+  --secondary-foreground: #ececec;
+  --muted: #212121;
+  --muted-foreground: #afafaf;
+  --accent: #303030;
+  --accent-foreground: #ffffff;
+  --destructive: #f87171;
+  --success: #34d399;
+  --warning: #fbbf24;
+  --info: #60a5fa;
+  --violet: #a78bfa;
+  --border: #ffffff1a;
+  --input: #ffffff26;
+  --ring: #5d5d5d;
+  --chart-1: #ececec;
+  --chart-2: #8f8f8f;
+  --chart-3: #60a5fa;
+  --chart-4: #fbbf24;
+  --chart-5: #f87171;
+  --sidebar: #0d0d0d;
+  --sidebar-foreground: #ececec;
+  --sidebar-primary: #ffffff;
+  --sidebar-primary-foreground: #0d0d0d;
+  --sidebar-accent: #212121;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #ffffff14;
+  --sidebar-ring: #5d5d5d;
 }
 
 @layer base {
@@ -140,9 +153,25 @@
   ::selection {
     background: #d8e6ff;
   }
+  .dark ::selection {
+    background: #264f78;
+  }
 }
 
-/* React Flow canvas tweaks */
+/* React Flow canvas tweaks (theme-aware) */
 .react-flow__attribution {
   display: none;
+}
+.react-flow {
+  --xy-background-pattern-color: #d4d4d4;
+}
+.react-flow.dark {
+  /* Let the surrounding surface show through and theme the controls with app tokens. */
+  --xy-background-color: transparent;
+  --xy-background-pattern-color: #333333;
+  --xy-minimap-background-color: var(--card);
+  --xy-minimap-mask-background-color: rgb(0 0 0 / 0.55);
+  --xy-controls-button-background-color: var(--card);
+  --xy-controls-button-background-color-hover: var(--accent);
+  --xy-controls-button-border-color: var(--border);
 }

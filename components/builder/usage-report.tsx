@@ -7,11 +7,11 @@ import { fmtBytes, fmtMoney, fmtNumber } from "@/lib/format";
 import { SourceBadge } from "@/components/common/source-badge";
 
 export const LEVEL_STYLES: Record<WarningLevel, { bar: string; text: string; bg: string; Icon: typeof Info }> = {
-  normal: { bar: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-50 border-emerald-200", Icon: CheckCircle2 },
-  info: { bar: "bg-blue-500", text: "text-blue-700", bg: "bg-blue-50 border-blue-200", Icon: Info },
-  high: { bar: "bg-amber-500", text: "text-amber-800", bg: "bg-amber-50 border-amber-200", Icon: AlertTriangle },
-  critical: { bar: "bg-orange-600", text: "text-orange-800", bg: "bg-orange-50 border-orange-200", Icon: AlertTriangle },
-  exceeded: { bar: "bg-red-600", text: "text-red-700", bg: "bg-red-50 border-red-200", Icon: OctagonAlert },
+  normal: { bar: "bg-success", text: "text-success", bg: "bg-success/10 border-success/30", Icon: CheckCircle2 },
+  info: { bar: "bg-info", text: "text-info", bg: "bg-info/10 border-info/30", Icon: Info },
+  high: { bar: "bg-warning", text: "text-warning", bg: "bg-warning/10 border-warning/30", Icon: AlertTriangle },
+  critical: { bar: "bg-destructive/70", text: "text-destructive", bg: "bg-destructive/5 border-destructive/20", Icon: AlertTriangle },
+  exceeded: { bar: "bg-destructive", text: "text-destructive", bg: "bg-destructive/10 border-destructive/30", Icon: OctagonAlert },
 };
 
 function fmtQuota(q: QuotaUsage, v: number) {

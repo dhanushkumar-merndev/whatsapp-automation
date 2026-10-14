@@ -179,14 +179,14 @@ export default async function OverviewPage({ searchParams }: PageProps<"/overvie
           </CardHeader>
           <CardContent className="space-y-2">
             {m.needsReply > 0 && (
-              <Link href="/conversations?view=handoff" className="block rounded-xl border border-amber-200 bg-amber-50/60 p-3 text-sm">
+              <Link href="/conversations?view=handoff" className="block rounded-xl border border-warning/30 bg-warning/5 p-3 text-sm">
                 <span className="font-medium">{m.needsReply}</span> conversation{m.needsReply === 1 ? "" : "s"} waiting for your team
               </Link>
             )}
             {(alerts ?? []).map((a) => (
               <Link key={a.id} href={a.link ?? "#"} className="block rounded-xl border p-3 text-sm hover:bg-muted/40">
                 <div className="flex items-center gap-2">
-                  <span className={`size-2 rounded-full ${a.severity === "critical" ? "bg-red-500" : "bg-amber-500"}`} />
+                  <span className={`size-2 rounded-full ${a.severity === "critical" ? "bg-destructive" : "bg-warning"}`} />
                   <span className="line-clamp-1">{a.title}</span>
                 </div>
                 <div className="mt-0.5 pl-4 text-xs text-muted-foreground">{fmtAgo(a.created_at)}</div>

@@ -86,9 +86,9 @@ export function PropertiesPanel({
       <Separator />
       <NodeForm type={type} c={c} set={set} errors={fieldErrors} />
       {issues.length > 0 && (
-        <div className="space-y-1 rounded-md border border-amber-200 bg-amber-50 p-2.5">
+        <div className="space-y-1 rounded-md border border-warning/30 bg-warning/10 p-2.5">
           {issues.map((i, idx) => (
-            <p key={idx} className={i.level === "error" ? "text-xs text-red-700" : "text-xs text-amber-800"}>
+            <p key={idx} className={i.level === "error" ? "text-xs text-destructive" : "text-xs text-warning"}>
               {i.level === "error" ? "Error: " : "Warning: "}
               {i.message}
             </p>
@@ -120,7 +120,7 @@ function NodeForm({ type, c, set, errors }: { type: NodeType; c: Config; set: (p
       const keywords = (c.keywords as string[]) ?? [];
       return (
         <div className="space-y-3">
-          <div className="rounded-md bg-emerald-50 p-2.5 text-[11px] text-emerald-800">
+          <div className="rounded-md bg-success/10 p-2.5 text-[11px] text-success">
             Flows only start when a customer messages your number. The bot never sends the first message.
           </div>
           <Field label="Start when the message is">

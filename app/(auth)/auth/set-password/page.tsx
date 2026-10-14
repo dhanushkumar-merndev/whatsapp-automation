@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { AuthPanel } from "@/components/auth/auth-panel";
 import { SetPasswordForm } from "@/components/auth/set-password-form";
 import { getAuthState } from "@/lib/auth/guard";
 
@@ -11,14 +11,8 @@ export default async function SetPasswordPage() {
   if (state.step === "login" || state.step === "denied") redirect("/login?error=link_invalid");
   if (state.step === "verify") redirect("/mfa/verify?next=/auth/set-password");
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Set your password</CardTitle>
-        <CardDescription>Choose a password for your administrator account.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <SetPasswordForm />
-      </CardContent>
-    </Card>
+    <AuthPanel title="Set your password" description="Choose a password for your administrator account.">
+      <SetPasswordForm />
+    </AuthPanel>
   );
 }

@@ -97,7 +97,7 @@ function OutboundBubble({ m, onPick }: { m: OutboundMessage; onPick: (id: string
             key={o.id}
             type="button"
             onClick={() => onPick(o.id, o.title)}
-            className="rounded-md border border-emerald-200 bg-white px-2 py-1 text-left text-xs text-emerald-700 hover:bg-emerald-50"
+            className="rounded-md border border-success/30 bg-white px-2 py-1 text-left text-xs text-success hover:bg-success/10 dark:bg-transparent"
           >
             {o.title}
           </button>
@@ -245,7 +245,7 @@ export function Simulator({
       <div className="space-y-2 border-b p-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-sm font-medium">
-            <FlaskConical className="size-4 text-violet-600" /> Simulation
+            <FlaskConical className="size-4 text-violet" /> Simulation
           </div>
           <Button variant="outline" size="xs" onClick={reset}>
             <RotateCcw /> Restart
@@ -264,15 +264,16 @@ export function Simulator({
           </label>
         </div>
         {stale && (
-          <button type="button" onClick={reset} className="w-full rounded bg-amber-50 px-2 py-1 text-left text-[11px] text-amber-800">
+          <button type="button" onClick={reset} className="w-full rounded bg-warning/10 px-2 py-1 text-left text-[11px] text-warning">
             The flow changed since this simulation started — click to restart with the latest draft.
           </button>
         )}
       </div>
-      <ScrollArea className="min-h-0 flex-1 bg-[#efeae2]">
+      {/* WhatsApp chat colours, light and dark. */}
+      <ScrollArea className="min-h-0 flex-1 bg-[#efeae2] dark:bg-[#0b141a]">
         <div className="space-y-2 p-3">
           {messages.length === 0 && (
-            <p className="rounded-md bg-white/80 p-2 text-center text-xs text-muted-foreground">
+            <p className="rounded-md bg-white/80 p-2 text-center text-xs text-muted-foreground dark:bg-[#202c33]/80">
               Send a message as the customer (e.g. “Hi”). The bot never writes first.
             </p>
           )}
@@ -281,8 +282,8 @@ export function Simulator({
               <div
                 className={cn(
                   "max-w-[85%] rounded-lg px-2.5 py-1.5 text-[13px] shadow-sm",
-                  m.direction === "inbound" ? "bg-[#d9fdd3]" : "bg-white",
-                  m.status === "failed" && "ring-1 ring-red-300",
+                  m.direction === "inbound" ? "bg-[#d9fdd3] dark:bg-[#005c4b]" : "bg-white dark:bg-[#202c33]",
+                  m.status === "failed" && "ring-1 ring-destructive/40",
                 )}
               >
                 {m.direction === "outbound" ? (

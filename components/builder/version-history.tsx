@@ -66,7 +66,7 @@ export function VersionHistory({
               <div key={v.id} className="rounded-lg border p-3">
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-medium">
-                    Version {v.version} {live && <span className="ml-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">LIVE</span>}
+                    Version {v.version} {live && <span className="ml-1 rounded bg-success/10 px-1.5 py-0.5 text-[10px] text-success">LIVE</span>}
                   </div>
                   {v.level && <LevelPill level={v.level} />}
                 </div>

@@ -7,7 +7,7 @@ export function ValidationList({ validation, onSelect }: { validation: GraphVali
   const all = [...validation.errors, ...validation.warnings];
   if (all.length === 0) {
     return (
-      <div className="flex items-center gap-2 p-4 text-sm text-emerald-700">
+      <div className="flex items-center gap-2 p-4 text-sm text-success">
         <CheckCircle2 className="size-4" /> No problems found. This flow can be published.
       </div>
     );
@@ -26,9 +26,9 @@ export function ValidationList({ validation, onSelect }: { validation: GraphVali
           className="flex w-full items-start gap-2 rounded-md border p-2 text-left text-xs hover:bg-muted/50 disabled:cursor-default"
         >
           {i.level === "error" ? (
-            <CircleX className="mt-0.5 size-3.5 shrink-0 text-red-600" />
+            <CircleX className="mt-0.5 size-3.5 shrink-0 text-destructive" />
           ) : (
-            <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
+            <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-warning" />
           )}
           <span>{i.message}</span>
         </button>

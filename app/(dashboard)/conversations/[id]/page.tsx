@@ -101,29 +101,32 @@ export default async function ConversationPage({ params }: PageProps<"/conversat
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <Card className="py-0">
-            <div className="max-h-[60vh] space-y-2 overflow-y-auto p-5">
-              {(messages ?? []).map((m) => (
-                <div key={m.id} className={cn("flex", m.direction === "inbound" ? "justify-start" : "justify-end")}>
-                  <div className="max-w-[78%]">
-                    <div
-                      className={cn(
-                        "rounded-3xl px-4 py-2 text-sm whitespace-pre-wrap",
-                        m.direction === "inbound" ? "bg-muted" : "bg-foreground text-background",
-                        m.status === "failed" && "ring-2 ring-red-300",
-                      )}
-                    >
-                      {m.body ?? <span className="italic opacity-70">[{m.type}]</span>}
-                      {m.direction === "outbound" && <OutboundExtras payload={m.payload} />}
-                    </div>
-                    <div className={cn("mt-0.5 px-2 text-[10px] text-muted-foreground", m.direction === "outbound" && "text-right")}>
-                      {fmtDate(m.created_at, "d MMM, HH:mm")}
-                      {m.direction === "outbound" && ` · ${m.sent_by ? "team" : "bot"} · ${m.status}`}
-                      {m.direction === "inbound" && m.processing_note && ` · ${m.processing_note.replace(/_/g, " ")}`}
+            {/* column-reverse keeps the scroll pinned to the newest message on load */}
+            <div className="flex max-h-[60vh] flex-col-reverse overflow-y-auto p-5">
+              <div className="space-y-2">
+                {(messages ?? []).map((m) => (
+                  <div key={m.id} className={cn("flex", m.direction === "inbound" ? "justify-start" : "justify-end")}>
+                    <div className="max-w-[78%]">
+                      <div
+                        className={cn(
+                          "rounded-3xl px-4 py-2 text-sm whitespace-pre-wrap",
+                          m.direction === "inbound" ? "bg-muted" : "bg-foreground text-background",
+                          m.status === "failed" && "ring-2 ring-destructive/40",
+                        )}
+                      >
+                        {m.body ?? <span className="italic opacity-70">[{m.type}]</span>}
+                        {m.direction === "outbound" && <OutboundExtras payload={m.payload} />}
+                      </div>
+                      <div className={cn("mt-0.5 px-2 text-[10px] text-muted-foreground", m.direction === "outbound" && "text-right")}>
+                        {fmtDate(m.created_at, "d MMM, HH:mm")}
+                        {m.direction === "outbound" && ` · ${m.sent_by ? "team" : "bot"} · ${m.status}`}
+                        {m.direction === "inbound" && m.processing_note && ` · ${m.processing_note.replace(/_/g, " ")}`}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-              {!messages?.length && <p className="text-sm text-muted-foreground">No messages.</p>}
+                ))}
+                {!messages?.length && <p className="text-sm text-muted-foreground">No messages.</p>}
+              </div>
             </div>
           </Card>
           <div className="mt-3">
@@ -149,7 +152,7 @@ export default async function ConversationPage({ params }: PageProps<"/conversat
                 <span className="text-muted-foreground">Last message:</span> {fmtDate(conv.last_inbound_at)}
               </div>
               {conv.status === "handoff" && conv.handoff_reason && (
-                <div className="rounded-xl bg-amber-50 p-2 text-xs text-amber-900">Handoff: {conv.handoff_reason}</div>
+                <div className="rounded-xl bg-warning/10 p-2 text-xs text-warning">Handoff: {conv.handoff_reason}</div>
               )}
             </CardContent>
           </Card>
@@ -168,7 +171,7 @@ export default async function ConversationPage({ params }: PageProps<"/conversat
                       <StatusBadge status={e.status} />
                     </div>
                     <div className="text-xs text-muted-foreground">{fmtDate(e.started_at)}</div>
-                    {e.error && <div className="mt-1 text-xs text-red-700">{e.error}</div>}
+                    {e.error && <div className="mt-1 text-xs text-destructive">{e.error}</div>}
                   </Link>
                 );
               })}

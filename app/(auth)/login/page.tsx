@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { AuthPanel } from "@/components/auth/auth-panel";
 import { LoginForm } from "@/components/auth/login-form";
 import { getAuthState } from "@/lib/auth/guard";
 
@@ -22,14 +22,8 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const next = typeof sp.next === "string" ? sp.next : undefined;
   const error = typeof sp.error === "string" ? ERRORS[sp.error] : undefined;
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Sign in</CardTitle>
-        <CardDescription>Administrator access only.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <LoginForm next={next} initialError={error} />
-      </CardContent>
-    </Card>
+    <AuthPanel title="Welcome back" description="Sign in with your administrator account.">
+      <LoginForm next={next} initialError={error} />
+    </AuthPanel>
   );
 }

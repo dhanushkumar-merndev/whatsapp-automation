@@ -1,6 +1,7 @@
 "use client";
 
 import "@xyflow/react/dist/style.css";
+import { useTheme } from "next-themes";
 import { useMemo } from "react";
 import { Background, BackgroundVariant, Controls, ReactFlow, ReactFlowProvider } from "@xyflow/react";
 import type { FlowDefinition } from "@/lib/engine/schema";
@@ -12,6 +13,7 @@ const nodeTypes = { flowNode: FlowNode };
 
 /** Read-only diagram highlighting the path a customer took through a flow version. */
 export function ReadonlyFlow({ definition, visited, current, height = 520 }: { definition: FlowDefinition; visited: string[]; current: string | null; height?: number }) {
+  const { resolvedTheme } = useTheme();
   const { nodes, edges } = useMemo(() => {
     const e = toEditor(definition);
     const seen = new Set(visited);
@@ -53,8 +55,9 @@ export function ReadonlyFlow({ definition, visited, current, height = 520 }: { d
             elementsSelectable={false}
             minZoom={0.2}
             proOptions={{ hideAttribution: true }}
+            colorMode={resolvedTheme === "dark" ? "dark" : "light"}
           >
-            <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="#d4d4d4" />
+            <Background variant={BackgroundVariant.Dots} gap={18} size={1} />
             <Controls showInteractive={false} />
           </ReactFlow>
         </div>

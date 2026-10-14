@@ -57,7 +57,7 @@ export default async function CrmPage() {
                   <span>Last success: {i.last_success_at ? fmtAgo(i.last_success_at) : "never"}</span>
                 </div>
                 {i.last_error && (
-                  <p className="rounded-xl bg-red-50 p-2 text-xs text-red-700">
+                  <p className="rounded-xl bg-destructive/10 p-2 text-xs text-destructive">
                     Last error ({fmtAgo(i.last_failure_at)}): {i.last_error}
                   </p>
                 )}

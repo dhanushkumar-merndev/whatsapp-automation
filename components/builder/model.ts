@@ -31,7 +31,7 @@ export function edgeStyle(sourceHandle: string | null | undefined): Partial<Edit
     style: { stroke: color, strokeWidth: 1.6 },
     label: HANDLE_LABELS[handle],
     labelStyle: { fontSize: 11, fill: color, fontWeight: 500 },
-    labelBgStyle: { fill: "#ffffff" },
+    labelBgStyle: { fill: "var(--card)" },
     labelBgPadding: [4, 2],
   };
 }

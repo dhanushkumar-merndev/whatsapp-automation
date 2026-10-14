@@ -29,7 +29,7 @@ export function ReplyBox({ conversationId, windowOpen, expiresLabel }: { convers
     );
   }
   return (
-    <div className="rounded-3xl border bg-background p-2 shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
+    <div className="rounded-3xl border bg-background p-2 shadow-[0_2px_12px_rgba(0,0,0,0.06)] dark:border-transparent dark:bg-accent">
       <Textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -42,7 +42,7 @@ export function ReplyBox({ conversationId, windowOpen, expiresLabel }: { convers
         rows={2}
         maxLength={4096}
         placeholder="Reply on WhatsApp…"
-        className="min-h-12 resize-none border-0 shadow-none focus-visible:ring-0"
+        className="min-h-12 resize-none border-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
       />
       <div className="flex items-center justify-between px-2 pb-1">
         <span className="text-[11px] text-muted-foreground">Window open · {expiresLabel}</span>

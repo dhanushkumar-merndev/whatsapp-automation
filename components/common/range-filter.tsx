@@ -17,7 +17,7 @@ export function RangeFilter({ value, basePath, extra }: { value: RangeKey; baseP
           href={{ pathname: basePath, query: { ...extra, range: k } }}
           className={cn(
             "rounded-full px-3 py-1 text-xs font-medium transition-colors",
-            value === k ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+            value === k ? "bg-background text-foreground shadow-sm dark:bg-accent" : "text-muted-foreground hover:text-foreground",
           )}
         >
           Last {k.replace("d", " days")}

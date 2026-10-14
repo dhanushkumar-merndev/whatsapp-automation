@@ -34,7 +34,7 @@ function Meter({ label, used, limit, unit, source, reset, note }: { label: strin
       {limit !== null && (
         <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
           <div
-            className={cn("h-full rounded-full", level === "exceeded" ? "bg-red-600" : level === "critical" ? "bg-orange-600" : level === "high" ? "bg-amber-500" : "bg-foreground")}
+            className={cn("h-full rounded-full", level === "exceeded" ? "bg-destructive" : level === "critical" ? "bg-destructive/70" : level === "high" ? "bg-warning" : "bg-foreground")}
             style={{ width: `${Math.min(100, Math.max((pct ?? 0) * 100, 0.5))}%` }}
           />
         </div>
@@ -122,7 +122,7 @@ export default async function UsagePage() {
       />
 
       {hobbyInProd && (
-        <div className="mb-5 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <div className="mb-5 flex items-start gap-3 rounded-2xl border border-warning/30 bg-warning/10 p-4 text-sm text-warning">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
           <span>
             Settings say this is a <b>production</b> deployment on the <b>Vercel Hobby</b> plan. Hobby is for personal, non-commercial use — use Vercel Pro

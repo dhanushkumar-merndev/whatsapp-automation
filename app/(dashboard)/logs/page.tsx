@@ -86,7 +86,7 @@ export default async function LogsPage({ searchParams }: PageProps<"/logs">) {
                           {c?.name ?? c?.profile_name ?? fmtPhone(c?.wa_id)}
                           {e.is_test && <span className="ml-1 text-xs text-muted-foreground">(test)</span>}
                         </Link>
-                        {e.error && <div className="max-w-72 truncate text-xs text-red-700">{e.error}</div>}
+                        {e.error && <div className="max-w-72 truncate text-xs text-destructive">{e.error}</div>}
                       </TableCell>
                       <TableCell className="text-sm">{f?.name ?? "—"}</TableCell>
                       <TableCell>
@@ -117,7 +117,7 @@ export default async function LogsPage({ searchParams }: PageProps<"/logs">) {
                     <span
                       className={cn(
                         "absolute top-1.5 -left-[21px] size-2.5 rounded-full border-2 border-background",
-                        n.status === "failed" ? "bg-red-500" : n.status === "waiting" ? "bg-blue-500" : n.status === "skipped" ? "bg-muted-foreground/40" : "bg-emerald-500",
+                        n.status === "failed" ? "bg-destructive" : n.status === "waiting" ? "bg-info" : n.status === "skipped" ? "bg-muted-foreground/40" : "bg-success",
                       )}
                     />
                     <div className="flex items-center gap-2 text-sm">
@@ -129,7 +129,7 @@ export default async function LogsPage({ searchParams }: PageProps<"/logs">) {
                       step {n.step} · {n.node_id} · {fmtDate(n.created_at, "HH:mm:ss")}
                       {n.duration_ms !== null ? ` · ${n.duration_ms} ms` : ""}
                     </div>
-                    {n.error && <div className="mt-0.5 text-xs text-red-700">{n.error}</div>}
+                    {n.error && <div className="mt-0.5 text-xs text-destructive">{n.error}</div>}
                     {n.detail && Object.keys(n.detail as object).length > 0 && (
                       <pre className="mt-1 max-h-28 overflow-auto rounded-lg bg-muted p-2 text-[10px] leading-snug">{JSON.stringify(n.detail, null, 1)}</pre>
                     )}
@@ -173,7 +173,7 @@ export default async function LogsPage({ searchParams }: PageProps<"/logs">) {
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">{fmtDate(j.run_at, "d MMM HH:mm:ss")}</TableCell>
                 <TableCell className="tabular-nums">{j.attempts}</TableCell>
-                <TableCell className="max-w-64 truncate text-xs text-red-700">{j.last_error ?? ""}</TableCell>
+                <TableCell className="max-w-64 truncate text-xs text-destructive">{j.last_error ?? ""}</TableCell>
                 <TableCell className="font-mono text-[10px] text-muted-foreground">{j.qstash_message_id ?? "—"}</TableCell>
               </TableRow>
             ))}
@@ -221,7 +221,7 @@ export default async function LogsPage({ searchParams }: PageProps<"/logs">) {
           <Link
             key={t}
             href={t === "executions" ? "/logs" : `/logs?tab=${t}`}
-            className={cn("rounded-full px-3.5 py-1 text-xs font-medium", tab === t ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")}
+            className={cn("rounded-full px-3.5 py-1 text-xs font-medium", tab === t ? "bg-background shadow-sm dark:bg-accent" : "text-muted-foreground hover:text-foreground")}
           >
             {TABS[t]}
           </Link>

@@ -76,7 +76,7 @@ export default async function WhatsAppPage() {
                   </div>
                 </div>
                 {envWaba && a.waba_id !== envWaba && (
-                  <p className="flex items-start gap-2 rounded-xl bg-amber-50 p-2 text-xs text-amber-900">
+                  <p className="flex items-start gap-2 rounded-xl bg-warning/10 p-2 text-xs text-warning">
                     <AlertTriangle className="mt-0.5 size-3.5 shrink-0" /> This WABA ID differs from META_WABA_ID; its webhook events will be rejected.
                   </p>
                 )}

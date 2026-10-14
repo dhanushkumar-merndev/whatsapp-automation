@@ -19,9 +19,17 @@ export interface NotificationItem {
   created_at: string;
 }
 
-const DOT = { info: "bg-blue-500", warning: "bg-amber-500", critical: "bg-red-500" };
+const DOT = { info: "bg-info", warning: "bg-warning", critical: "bg-destructive" };
 
-export function NotificationsMenu({ items, unread }: { items: NotificationItem[]; unread: number }) {
+export function NotificationsMenu({
+  items,
+  unread,
+  align = "end",
+}: {
+  items: NotificationItem[];
+  unread: number;
+  align?: "start" | "end";
+}) {
   const [pending, start] = useTransition();
   return (
     <Popover>
@@ -29,13 +37,13 @@ export function NotificationsMenu({ items, unread }: { items: NotificationItem[]
         <Button variant="ghost" size="icon" aria-label={`Notifications (${unread} unread)`} className="relative">
           <Bell />
           {unread > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
+            <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-white">
               {unread > 99 ? "99+" : unread}
             </span>
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-96 p-0">
+      <PopoverContent align={align} className="w-96 max-w-[calc(100vw-2rem)] p-0">
         <div className="flex items-center justify-between border-b px-3 py-2">
           <div className="text-sm font-medium">Notifications</div>
           <Button

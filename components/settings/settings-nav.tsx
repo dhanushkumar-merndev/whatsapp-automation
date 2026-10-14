@@ -19,7 +19,7 @@ export function SettingsNav() {
         <Link
           key={i.href}
           href={i.href}
-          className={cn("rounded-full px-3.5 py-1.5 text-xs font-medium", path === i.href ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")}
+          className={cn("rounded-full px-3.5 py-1.5 text-xs font-medium", path === i.href ? "bg-background shadow-sm dark:bg-accent" : "text-muted-foreground hover:text-foreground")}
         >
           {i.label}
         </Link>
