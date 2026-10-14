@@ -51,7 +51,7 @@ export const NODE_REGISTRY: { [K in NodeType]: NodeDefinition<K> } = {
     outputs: OUT,
     sends: true,
     waitsForInput: false,
-    defaults: () => ({ text: "Hello {{contact.name|there}}!" }),
+    defaults: () => ({ text: "Hello {{contact.name|there}}!", cooldownHours: 0 }),
   },
   send_media: {
     type: "send_media",

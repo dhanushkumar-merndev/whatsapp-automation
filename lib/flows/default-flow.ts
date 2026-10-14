@@ -33,33 +33,44 @@ export function buildDefaultFlowDefinition(brochureAssetId: string | null = null
       matchMode: "contains",
       customerType: "any",
     }),
-    node("n_welcome", "send_message", "Welcome message", X, step, {
+    node("n_open_check", "condition", "Already submitted?", X, step, {
+      left: "",
+      operator: "has_open_enquiry",
+      right: "30",
+      caseSensitive: false,
+    }),
+    node("n_open_notice", "send_message", "Request already received", X + 420, step * 2, {
+      text: "Hi {{contact.name|there}}! We have already received your request. Our team will contact you soon.\n\nNeed help urgently? Reply HUMAN to chat with our team.",
+      cooldownHours: 12,
+    }),
+    node("n_open_end", "end", "Already submitted", X + 420, step * 3, { outcome: "completed" }),
+    node("n_welcome", "send_message", "Welcome message", X, step * 2, {
       text:
         "Welcome to Star Growth Hub!\n\nWe help businesses grow through Digital Marketing, Social Media Management, Advertising and Creative Production.\n\nHere is our company brochure.",
     }),
-    node("n_brochure", "send_media", "Company brochure", X, step * 2, {
+    node("n_brochure", "send_media", "Company brochure", X, step * 3, {
       assetId: brochureAssetId,
       mediaType: "document",
       caption: "Star Growth Hub — Company Brochure",
       filename: "Star-Growth-Hub-Brochure.pdf",
       cooldownHours: 24,
     }),
-    node("n_wait", "wait", "Wait 5 seconds", X, step * 3, { amount: 5, unit: "seconds", essential: false }),
-    node("n_known", "condition", "Name already known?", X, step * 4, {
+    node("n_wait", "wait", "Wait 5 seconds", X, step * 4, { amount: 5, unit: "seconds", essential: false }),
+    node("n_known", "condition", "Name already known?", X, step * 5, {
       left: "{{contact.name}}",
       operator: "is_set",
       right: "",
       caseSensitive: false,
     }),
-    node("n_welcome_back", "send_message", "Welcome back", X + 360, step * 5, {
+    node("n_welcome_back", "send_message", "Welcome back", X + 360, step * 6, {
       text: "Good to see you again, {{contact.name}}!",
     }),
-    node("n_ask_name", "ask_question", "Ask name", X - 360, step * 5, {
+    node("n_ask_name", "ask_question", "Ask name", X - 360, step * 6, {
       question: "May I know your name, please?",
       variable: "name",
       leadField: "name",
     }),
-    node("n_validate_name", "validation", "Validate name", X - 360, step * 6, {
+    node("n_validate_name", "validation", "Validate name", X - 360, step * 7, {
       variable: "name",
       required: true,
       minLength: 2,
@@ -70,7 +81,7 @@ export function buildDefaultFlowDefinition(brochureAssetId: string | null = null
       errorMessage: "Sorry, I didn't catch that. Please share your name (letters only).",
       maxAttempts: 3,
     }),
-    node("n_service", "interactive", "Ask service", X, step * 7, {
+    node("n_service", "interactive", "Ask service", X, step * 8, {
       body: "Which service are you looking for?",
       header: "",
       footer: "Or reply with a number from 1 to 6",
@@ -80,7 +91,7 @@ export function buildDefaultFlowDefinition(brochureAssetId: string | null = null
       variable: "service",
       leadField: "service",
     }),
-    node("n_validate_service", "validation", "Validate selection", X, step * 8, {
+    node("n_validate_service", "validation", "Validate selection", X, step * 9, {
       variable: "service",
       required: true,
       minLength: null,
@@ -91,17 +102,17 @@ export function buildDefaultFlowDefinition(brochureAssetId: string | null = null
       errorMessage: "Sorry, that's not a valid option. Please select a number from 1 to 6.",
       maxAttempts: 3,
     }),
-    node("n_ask_business", "ask_question", "Ask business name", X, step * 9, {
+    node("n_ask_business", "ask_question", "Ask business name", X, step * 10, {
       question: "Could you share your business name?",
       variable: "business_name",
       leadField: "business_name",
     }),
-    node("n_ask_requirements", "ask_question", "Ask requirements", X, step * 10, {
+    node("n_ask_requirements", "ask_question", "Ask requirements", X, step * 11, {
       question: "Please tell us briefly what you're looking to achieve.",
       variable: "requirements",
       leadField: "requirements",
     }),
-    node("n_save", "save_lead", "Save lead", X, step * 11, {
+    node("n_save", "save_lead", "Save lead", X, step * 12, {
       mapping: {
         name: "{{vars.name}}",
         business_name: "{{vars.business_name}}",
@@ -112,19 +123,22 @@ export function buildDefaultFlowDefinition(brochureAssetId: string | null = null
       qualifyWhen: ["name", "service", "requirements"],
       updateContact: true,
     }),
-    node("n_crm", "crm_webhook", "Send to CRM", X, step * 12, { integrationId: null }),
-    node("n_confirm", "send_message", "Confirmation", X, step * 13, {
+    node("n_crm", "crm_webhook", "Send to CRM", X, step * 13, { integrationId: null }),
+    node("n_confirm", "send_message", "Confirmation", X, step * 14, {
       text: "Thank you for sharing your details. Our team will review your requirements and get in touch with you.",
     }),
-    node("n_end", "end", "Completed", X, step * 14, { outcome: "completed" }),
-    node("n_handoff", "handoff", "Offer human assistance", X + 420, step * 9, {
+    node("n_end", "end", "Completed", X, step * 15, { outcome: "completed" }),
+    node("n_handoff", "handoff", "Offer human assistance", X + 420, step * 10, {
       message: "No problem — let me connect you with our team. Someone will reply to you here shortly.",
       reason: "Customer could not complete the automated questions",
     }),
   ];
 
   const edges: FlowEdge[] = [
-    edge("n_trigger", "n_welcome"),
+    edge("n_trigger", "n_open_check"),
+    edge("n_open_check", "n_open_notice", "true"),
+    edge("n_open_check", "n_welcome", "false"),
+    edge("n_open_notice", "n_open_end"),
     edge("n_welcome", "n_brochure"),
     edge("n_brochure", "n_wait"),
     edge("n_wait", "n_known"),
@@ -149,4 +163,4 @@ export function buildDefaultFlowDefinition(brochureAssetId: string | null = null
 
 export const DEFAULT_FLOW_NAME = "Star Growth Hub — Enquiry";
 export const DEFAULT_FLOW_DESCRIPTION =
-  "Welcome + brochure, 5-second delay, name, service selection with validation, business name, requirements, lead capture and CRM sync.";
+  "Already-submitted check, welcome + brochure, 5-second delay, name, service selection with validation, business name, requirements, lead capture and CRM sync.";

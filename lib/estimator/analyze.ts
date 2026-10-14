@@ -44,6 +44,8 @@ export interface AnalyzeOptions {
 }
 
 const INPUT: NodeType[] = ["ask_question", "interactive"];
+/** Assumed share of conversations that are follow-ups from customers with an open enquiry. */
+export const FOLLOW_UP_SHARE = 0.1;
 const zero = (): PerCustomer => ({ outgoing: 0, scheduled: 0, inbound: 0, crmDeliveries: 0, mediaSends: 0 });
 
 function add(a: PerCustomer, b: PerCustomer, k = 1): PerCustomer {
@@ -160,7 +162,8 @@ export function analyzeFlow(def: FlowDefinition, opts: AnalyzeOptions): FlowAnal
         break;
       }
       case "condition":
-        pass = { true: 0.5, false: 0.5 };
+        // Follow-ups from customers with an open enquiry are a minority of conversations.
+        pass = c.operator === "has_open_enquiry" ? { true: FOLLOW_UP_SHARE, false: 1 - FOLLOW_UP_SHARE } : { true: 0.5, false: 0.5 };
         break;
       case "crm_webhook":
         own.crmDeliveries = 1;

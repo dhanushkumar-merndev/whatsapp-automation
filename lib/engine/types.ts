@@ -58,6 +58,8 @@ export interface ContactSnapshot {
   optedOut: boolean;
   cooldownUntil: string | null;
   isTest: boolean;
+  /** When the customer's latest still-open enquiry (lead new/qualified/contacted) was created, if any. */
+  openEnquiryAt: string | null;
 }
 
 export interface ConversationSnapshot {
@@ -156,6 +158,8 @@ export interface MediaAssetRecord {
 }
 
 export type LeadStatus = "incomplete" | "new" | "qualified" | "contacted" | "won" | "lost" | "closed";
+/** Submitted enquiries the team has not closed yet. */
+export const OPEN_LEAD_STATUSES: readonly LeadStatus[] = ["new", "qualified", "contacted"];
 
 export interface LeadPatch {
   name?: string | null;
@@ -326,6 +330,8 @@ export interface EngineStore {
   completeOutbound(idempotencyKey: string, result: { waMessageId: string } | { error: string; skipped?: boolean }): Promise<void>;
 
   hasRecentMediaSend(contactId: string, assetId: string, sinceIso: string): Promise<boolean>;
+  /** Whether this flow node already messaged the contact since the given time. */
+  hasRecentNodeSend(contactId: string, flowId: string, nodeId: string, sinceIso: string): Promise<boolean>;
   getMediaAsset(id: string): Promise<MediaAssetRecord | null>;
 
   upsertLead(input: {

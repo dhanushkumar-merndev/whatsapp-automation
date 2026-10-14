@@ -36,6 +36,7 @@ const OPERATOR_LABELS: Record<(typeof CONDITION_OPERATORS)[number], string> = {
   customer_is_new: "customer is new",
   customer_is_returning: "customer is returning",
   option_selected: "selected option is",
+  has_open_enquiry: "customer already has an open enquiry",
 };
 
 export function PropertiesPanel({
@@ -171,9 +172,14 @@ function NodeForm({ type, c, set, errors }: { type: NodeType; c: Config; set: (p
 
     case "send_message":
       return (
-        <Field label="Message" error={errors.get("text")}>
-          <MessageField value={str("text")} onChange={(v) => set({ text: v })} rows={6} />
-        </Field>
+        <div className="space-y-3">
+          <Field label="Message" error={errors.get("text")}>
+            <MessageField value={str("text")} onChange={(v) => set({ text: v })} rows={6} />
+          </Field>
+          <Field label="Repeat cooldown (hours)" help="Don't send this message to the same customer again within this time. 0 = always send.">
+            <NumberField value={num("cooldownHours")} onChange={(v) => set({ cooldownHours: v ?? 0 })} min={0} max={720} />
+          </Field>
+        </div>
       );
 
     case "send_media": {
@@ -426,8 +432,9 @@ function NodeForm({ type, c, set, errors }: { type: NodeType; c: Config; set: (p
 
     case "condition": {
       const op = str("operator") as (typeof CONDITION_OPERATORS)[number];
-      const needsValue = !["is_set", "is_not_set", "customer_is_new", "customer_is_returning"].includes(op);
-      const needsLeft = !["customer_is_new", "customer_is_returning"].includes(op);
+      const openEnquiry = op === "has_open_enquiry";
+      const needsValue = !["is_set", "is_not_set", "customer_is_new", "customer_is_returning", "has_open_enquiry"].includes(op);
+      const needsLeft = !["customer_is_new", "customer_is_returning", "has_open_enquiry"].includes(op);
       return (
         <div className="space-y-3">
           {needsLeft && (
@@ -442,6 +449,20 @@ function NodeForm({ type, c, set, errors }: { type: NodeType; c: Config; set: (p
               options={CONDITION_OPERATORS.map((o) => ({ value: o, label: OPERATOR_LABELS[o] }))}
             />
           </Field>
+          {openEnquiry && (
+            <Field
+              label="Only if submitted within (days)"
+              help="An enquiry counts while its lead is New, Qualified or Contacted. Mark it Won, Lost or Closed in Leads to let the customer start again. Leave empty for no time limit."
+            >
+              <NumberField
+                value={str("right") ? Number(str("right")) : null}
+                onChange={(v) => set({ right: v ? String(v) : "" })}
+                min={1}
+                max={365}
+                allowNull
+              />
+            </Field>
+          )}
           {needsValue && (
             <Field label="Compare with">
               <TextField value={str("right")} onChange={(v) => set({ right: v })} />

@@ -12,6 +12,16 @@ async function reachServiceQuestion(h: ReturnType<typeof createHarness>) {
   await h.say("Asha Kumar");
 }
 
+/** Runs the default flow to the end, leaving a qualified (open) lead. */
+async function submitEnquiry(h: ReturnType<typeof createHarness>) {
+  await reachServiceQuestion(h);
+  await h.say("1");
+  await h.say("Asha Studio");
+  await h.say("More customers from Instagram");
+}
+
+const ALREADY_RECEIVED = "Hi Asha Kumar! We have already received your request. Our team will contact you soon.";
+
 describe("Acceptance — customer-initiated WhatsApp automation", () => {
   it("4. the bot never initiates a conversation", async () => {
     const h = createHarness();
@@ -150,13 +160,12 @@ describe("Acceptance — customer-initiated WhatsApp automation", () => {
 
   it("11b. a returning customer is recognised and not asked for their name again", async () => {
     const h = createHarness();
-    await reachServiceQuestion(h);
-    await h.say("1");
-    await h.say("Asha Studio");
-    await h.say("More customers from Instagram");
+    await submitEnquiry(h);
     expect(h.execution().status).toBe("completed");
     const sentBefore = h.sender.sent.length;
 
+    // The team has closed the earlier enquiry, so a new one may start.
+    h.store.leads.get(h.lead()!.id)!.status = "won";
     h.clock.advance(3 * 24 * 3600);
     await h.say("Hello again");
     h.clock.advance(5);
@@ -175,6 +184,43 @@ describe("Acceptance — customer-initiated WhatsApp automation", () => {
     await h.say("Hi again");
     const docs = h.sender.sent.filter((s) => s.message.kind === "media");
     expect(docs).toHaveLength(1);
+  });
+
+  it("11d. a customer with an open enquiry is told it was received instead of starting again", async () => {
+    const h = createHarness();
+    await submitEnquiry(h);
+    expect(h.lead()?.status).toBe("qualified");
+    const sentBefore = h.sender.sent.length;
+    const jobsBefore = h.scheduler.scheduled.length;
+
+    h.clock.advance(3600);
+    await h.say("Hi");
+    const newTexts = h.sender.texts().slice(sentBefore);
+    expect(newTexts).toHaveLength(1);
+    expect(newTexts[0]).toContain(ALREADY_RECEIVED);
+    expect(h.scheduler.scheduled).toHaveLength(jobsBefore);
+    expect(h.execution().status).toBe("completed");
+
+    // Further messages within the 12-hour cooldown get no automated reply.
+    h.clock.advance(3600);
+    await h.say("ok thanks");
+    expect(h.sender.sent.length).toBe(sentBefore + 1);
+
+    // After the cooldown the notice is sent again.
+    h.clock.advance(12 * 3600);
+    await h.say("Any update?");
+    expect(h.sender.texts().slice(sentBefore).filter((t) => t.includes(ALREADY_RECEIVED))).toHaveLength(2);
+  });
+
+  it("11e. the enquiry questions start again once the open enquiry is older than 30 days", async () => {
+    const h = createHarness();
+    await submitEnquiry(h);
+    const sentBefore = h.sender.sent.length;
+    h.clock.advance(31 * 24 * 3600);
+    await h.say("Hi");
+    const newTexts = h.sender.texts().slice(sentBefore);
+    expect(newTexts[0]).toContain("Welcome to Star Growth Hub!");
+    expect(newTexts.some((t) => t.includes(ALREADY_RECEIVED))).toBe(false);
   });
 
   it("12. an expired 24-hour service window prevents free-form sends", async () => {

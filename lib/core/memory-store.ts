@@ -19,7 +19,7 @@ import type {
   UsageIncrement,
   UsageService,
 } from "@/lib/engine/types";
-import { ACTIVE_EXECUTION_STATUSES } from "@/lib/engine/types";
+import { ACTIVE_EXECUTION_STATUSES, OPEN_LEAD_STATUSES } from "@/lib/engine/types";
 import type {
   AccountRecord,
   AppStore,
@@ -74,7 +74,7 @@ interface MemoryFlow {
 
 export class MemoryStore implements AppStore {
   accounts = new Map<string, AccountRecord>();
-  contacts = new Map<string, ContactSnapshot & { createdAt: string }>();
+  contacts = new Map<string, Omit<ContactSnapshot, "openEnquiryAt"> & { createdAt: string }>();
   conversations = new Map<string, ConversationSnapshot & { lockToken: string | null; lockExpiresAt: number }>();
   messages: MemoryMessage[] = [];
   flows = new Map<string, MemoryFlow>();
@@ -314,7 +314,11 @@ export class MemoryStore implements AppStore {
     const contact = this.contacts.get(conv.contactId)!;
     const { lockToken: _l, lockExpiresAt: _e, ...conversation } = conv;
     const { createdAt: _c, ...c } = contact;
-    return { conversation: clone(conversation), contact: clone(c) };
+    const open = [...this.leads.values()]
+      .filter((l) => l.contactId === c.id && OPEN_LEAD_STATUSES.includes(l.status))
+      .map((l) => l.createdAt)
+      .sort();
+    return { conversation: clone(conversation), contact: clone({ ...c, openEnquiryAt: open.at(-1) ?? null }) };
   }
 
   async getActiveExecution(conversationId: string) {
@@ -485,6 +489,19 @@ export class MemoryStore implements AppStore {
       m.status = result.skipped ? "skipped" : "failed";
       m.processingNote = result.error;
     }
+  }
+
+  async hasRecentNodeSend(contactId: string, flowId: string, nodeId: string, sinceIso: string) {
+    return this.messages.some(
+      (m) =>
+        m.direction === "outbound" &&
+        m.contactId === contactId &&
+        m.nodeId === nodeId &&
+        m.executionId !== null &&
+        this.executions.get(m.executionId)?.flowId === flowId &&
+        m.createdAt >= sinceIso &&
+        ["sent", "delivered", "read", "pending"].includes(m.status),
+    );
   }
 
   async hasRecentMediaSend(contactId: string, assetId: string, sinceIso: string) {

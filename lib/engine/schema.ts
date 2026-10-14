@@ -43,6 +43,8 @@ export const triggerConfig = z.object({
 
 export const sendMessageConfig = z.object({
   text: messageText,
+  /** Do not send this message to the same contact again within this many hours (0 = always send). */
+  cooldownHours: z.number().int().min(0).max(24 * 30).default(0),
 });
 
 export const sendMediaConfig = z.object({
@@ -115,6 +117,7 @@ export const CONDITION_OPERATORS = [
   "customer_is_new",
   "customer_is_returning",
   "option_selected",
+  "has_open_enquiry",
 ] as const;
 
 export const conditionConfig = z.object({

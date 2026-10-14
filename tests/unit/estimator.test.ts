@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { estimateFlow, warningLevel, type EstimatorAssumptions, type PlanContext } from "@/lib/estimator/estimate";
-import { analyzeFlow } from "@/lib/estimator/analyze";
+import { analyzeFlow, FOLLOW_UP_SHARE } from "@/lib/estimator/analyze";
 import { buildDefaultFlowDefinition } from "@/lib/flows/default-flow";
 import type { FlowDefinition } from "@/lib/engine/schema";
 
@@ -54,8 +54,8 @@ describe("Flow Usage Estimator", () => {
 
   it("counts only real QStash deliveries — immediate steps cost nothing", () => {
     const a = analyzeFlow(definition, { completionRate: 1, validationRetriesPerQuestion: 0, qstashMaxRetries: 3, crmMaxAttempts: 6 });
-    // The default flow has exactly one Wait node.
-    expect(a.typical.scheduled).toBe(1);
+    // The default flow has exactly one Wait node, skipped by follow-ups from customers with an open enquiry.
+    expect(a.typical.scheduled).toBeCloseTo(1 - FOLLOW_UP_SHARE, 5);
     expect(a.waitCount).toBe(1);
     // Many more nodes than scheduled deliveries.
     expect(definition.nodes.length).toBeGreaterThan(10);
@@ -63,8 +63,9 @@ describe("Flow Usage Estimator", () => {
 
   it("derives typical replies from the flow: welcome, brochure, questions and confirmation", () => {
     const a = analyzeFlow(definition, { completionRate: 1, validationRetriesPerQuestion: 0, qstashMaxRetries: 3, crmMaxAttempts: 6 });
-    // welcome + brochure + (0.5 × welcome-back + 0.5 × ask name) + service + business + requirements + confirmation
-    expect(a.typical.outgoing).toBeCloseTo(7, 5);
+    // New enquiry: welcome + brochure + (0.5 × welcome-back + 0.5 × ask name) + service + business + requirements + confirmation = 7.
+    // Follow-up with an open enquiry: one "already received" notice.
+    expect(a.typical.outgoing).toBeCloseTo((1 - FOLLOW_UP_SHARE) * 7 + FOLLOW_UP_SHARE * 1, 5);
     expect(a.worst.outgoing).toBeGreaterThan(a.typical.outgoing);
   });
 

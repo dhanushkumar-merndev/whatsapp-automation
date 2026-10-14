@@ -283,6 +283,7 @@ function scope(ctx: RunContext): TemplateScope {
       business_name: ctx.contact.businessName,
       email: ctx.contact.email,
       is_new: ctx.exec.context.isNewCustomer,
+      has_open_enquiry: ctx.contact.openEnquiryAt !== null,
     },
     vars: ctx.exec.context.vars,
     lead: { id: ctx.exec.context.leadId },
@@ -357,6 +358,12 @@ async function executeNode(ctx: RunContext, node: FlowNode): Promise<NodeResult>
 
     case "send_message": {
       const cfg = parseNodeConfig("send_message", node.data.config);
+      if (cfg.cooldownHours > 0) {
+        const since = new Date(deps.now().getTime() - cfg.cooldownHours * 3_600_000).toISOString();
+        if (await deps.store.hasRecentNodeSend(ctx.contact.id, exec.flowId, node.id, since)) {
+          return { type: "next", handle: "out", status: "skipped", detail: { reason: "cooldown", cooldownHours: cfg.cooldownHours } };
+        }
+      }
       const text = renderTemplate(cfg.text, scope(ctx));
       const outcome = await sendOutbound(ctx, node, { kind: "text", text });
       if (outcome === "window_closed") return windowStop();
@@ -591,6 +598,13 @@ function evaluateCondition(ctx: RunContext, cfg: ConditionConfig): boolean {
       return ctx.exec.context.isNewCustomer;
     case "customer_is_returning":
       return !ctx.exec.context.isNewCustomer;
+    case "has_open_enquiry": {
+      // "Compare with" holds an optional look-back in days; blank means any open enquiry counts.
+      if (!ctx.contact.openEnquiryAt) return false;
+      const days = Number(cfg.right.trim());
+      if (!cfg.right.trim() || !Number.isFinite(days) || days <= 0) return true;
+      return ctx.deps.now().getTime() - new Date(ctx.contact.openEnquiryAt).getTime() <= days * 86_400_000;
+    }
     case "is_set":
       return renderTemplate(cfg.left, s).trim().length > 0;
     case "is_not_set":

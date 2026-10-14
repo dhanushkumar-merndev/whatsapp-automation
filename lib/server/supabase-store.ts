@@ -6,6 +6,7 @@ import { hashIdentifier } from "@/lib/ratelimit";
 import { flowDefinitionSchema } from "@/lib/engine/schema";
 import {
   ACTIVE_EXECUTION_STATUSES,
+  OPEN_LEAD_STATUSES,
   type ClaimResult,
   type ContactSnapshot,
   type ConversationSnapshot,
@@ -300,7 +301,20 @@ export class SupabaseStore implements AppStore {
       optedOut: Boolean(c.opted_out),
       cooldownUntil: (c.cooldown_until as string) ?? null,
       isTest: Boolean(c.is_test),
+      openEnquiryAt: null,
     };
+    const openLead = check(
+      await this.db
+        .from("leads")
+        .select("created_at")
+        .eq("contact_id", contact.id)
+        .in("status", [...OPEN_LEAD_STATUSES])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      "load open enquiry",
+    );
+    contact.openEnquiryAt = (openLead?.created_at as string) ?? null;
     return { conversation, contact };
   }
 
@@ -556,6 +570,20 @@ export class SupabaseStore implements AppStore {
       .in("status", ["pending", "sent", "delivered", "read"])
       .gte("created_at", sinceIso);
     if (error) throw new Error(`media cooldown: ${error.message}`);
+    return (count ?? 0) > 0;
+  }
+
+  async hasRecentNodeSend(contactId: string, flowId: string, nodeId: string, sinceIso: string) {
+    const { count, error } = await this.db
+      .from("messages")
+      .select("id, flow_executions!inner(flow_id)", { count: "exact", head: true })
+      .eq("direction", "outbound")
+      .eq("contact_id", contactId)
+      .eq("node_id", nodeId)
+      .eq("flow_executions.flow_id", flowId)
+      .in("status", ["pending", "sent", "delivered", "read"])
+      .gte("created_at", sinceIso);
+    if (error) throw new Error(`message cooldown: ${error.message}`);
     return (count ?? 0) > 0;
   }
 
