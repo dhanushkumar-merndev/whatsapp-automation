@@ -38,6 +38,8 @@ const serverSchema = publicSchema.extend({
   UPSTASH_MANAGEMENT_EMAIL: z.string().optional(),
   UPSTASH_MANAGEMENT_API_KEY: z.string().optional(),
   UPSTASH_REDIS_DATABASE_ID: z.string().optional(),
+  TELEGRAM_BOT_TOKEN: z.string().optional(),
+  TELEGRAM_CHAT_ID: z.string().optional(),
 });
 
 export type ServerEnv = z.infer<typeof serverSchema>;

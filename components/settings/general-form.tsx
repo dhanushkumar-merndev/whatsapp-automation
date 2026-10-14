@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Save } from "lucide-react";
+import { Loader2, Save, Search, Send } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { updateSettingsAction } from "@/app/(dashboard)/settings/actions";
+import { Switch } from "@/components/ui/switch";
+import { findTelegramChatsAction, sendTelegramTestAction, updateSettingsAction } from "@/app/(dashboard)/settings/actions";
 import type { AppSettings } from "@/lib/settings/schema";
 
 const list = (s: string) => s.split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
@@ -25,7 +26,88 @@ function Num({ label, value, onChange, help }: { label: string; value: number; o
   );
 }
 
-export function GeneralSettingsForm({ initial }: { initial: AppSettings }) {
+const TELEGRAM_EVENTS: { key: keyof AppSettings["telegram"]["events"]; label: string; help: string }[] = [
+  { key: "handoff", label: "Human help needed", help: "Customer typed HUMAN or could not finish the questions." },
+  { key: "handoffMessages", label: "Customer replies to your team", help: "Every message from a customer whose chat is with your team." },
+  { key: "leads", label: "New leads", help: "Name, phone, service, business and requirements when an enquiry is submitted." },
+  { key: "problems", label: "Problems", help: "CRM delivery failed, 24-hour window closed, automation errors, missing media." },
+];
+
+function TelegramCard({ s, setS, tokenSet }: { s: AppSettings; setS: (next: AppSettings) => void; tokenSet: boolean }) {
+  const [chats, setChats] = useState(s.telegram.chatIds.join("\n"));
+  const [busy, startBusy] = useTransition();
+  const tg = s.telegram;
+  const setTg = (patch: Partial<AppSettings["telegram"]>) => setS({ ...s, telegram: { ...tg, ...patch } });
+  const setChatText = (text: string) => {
+    setChats(text);
+    setTg({ chatIds: list(text) });
+  };
+
+  const findChats = () =>
+    startBusy(async () => {
+      const r = await findTelegramChatsAction();
+      if (!r.ok) return void toast.error(r.error);
+      const found = r.data ?? [];
+      if (!found.length) return void toast.info("No chats found. Send /start to your bot in Telegram, then try again.");
+      const merged = [...new Set([...list(chats), ...found.map((c) => c.id)])];
+      setChatText(merged.join("\n"));
+      toast.success(`Found ${found.map((c) => `${c.title} (${c.id})`).join(", ")}. Save settings to keep them.`);
+    });
+
+  const sendTest = () =>
+    startBusy(async () => {
+      const r = await sendTelegramTestAction({ chatIds: list(chats) });
+      if (r.ok) toast.success("Test alert sent. Check Telegram.");
+      else toast.error(r.error);
+    });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">Telegram alerts</CardTitle>
+        <CardDescription>
+          {tokenSet
+            ? "Get important events on Telegram. Customer names, numbers and messages are included in the alerts."
+            : "Add TELEGRAM_BOT_TOKEN (from @BotFather) to the server environment to turn on Telegram alerts."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <label className="flex items-center justify-between gap-3">
+          <span className="text-sm font-medium">Send alerts to Telegram</span>
+          <Switch checked={tg.enabled} onCheckedChange={(v) => setTg({ enabled: v })} />
+        </label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {TELEGRAM_EVENTS.map((e) => (
+            <label key={e.key} className="flex items-start justify-between gap-3 rounded-xl border p-3">
+              <span className="space-y-0.5">
+                <span className="block text-sm">{e.label}</span>
+                <span className="block text-[11px] text-muted-foreground">{e.help}</span>
+              </span>
+              <Switch checked={tg.events[e.key]} disabled={!tg.enabled} onCheckedChange={(v) => setTg({ events: { ...tg.events, [e.key]: v } })} />
+            </label>
+          ))}
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Chat IDs (one per line)</Label>
+          <Textarea rows={2} value={chats} onChange={(e) => setChatText(e.target.value)} placeholder={"123456789\n-1001234567890"} className="font-mono" />
+          <p className="text-[11px] text-muted-foreground">
+            Send /start to your bot (or add it to a group and send a message there), then use “Find chat IDs”.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" onClick={findChats} disabled={busy || !tokenSet}>
+            {busy ? <Loader2 className="animate-spin" /> : <Search />} Find chat IDs
+          </Button>
+          <Button type="button" variant="outline" onClick={sendTest} disabled={busy || !tokenSet || !list(chats).length}>
+            {busy ? <Loader2 className="animate-spin" /> : <Send />} Send test alert
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export function GeneralSettingsForm({ initial, telegramTokenSet }: { initial: AppSettings; telegramTokenSet: boolean }) {
   const router = useRouter();
   const [s, setS] = useState(initial);
   const [pending, start] = useTransition();
@@ -45,6 +127,7 @@ export function GeneralSettingsForm({ initial }: { initial: AppSettings }) {
         retention: s.retention,
         hosting: s.hosting,
         estimator: s.estimator,
+        telegram: s.telegram,
       });
       if (r.ok) {
         toast.success("Settings saved");
@@ -86,6 +169,8 @@ export function GeneralSettingsForm({ initial }: { initial: AppSettings }) {
           </div>
         </CardContent>
       </Card>
+
+      <TelegramCard s={s} setS={setS} tokenSet={telegramTokenSet} />
 
       <Card>
         <CardHeader>

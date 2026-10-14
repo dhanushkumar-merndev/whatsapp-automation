@@ -6,6 +6,8 @@ import { createClient } from "@/lib/supabase/server";
 import { audit, requireAdmin, runAction } from "@/lib/auth/guard";
 import { appSettingsSchema, type AppSettings } from "@/lib/settings/schema";
 import { invalidateSettingsCache, loadSettings } from "@/lib/settings/server";
+import { appUrl } from "@/lib/env";
+import { findTelegramChats, formatTelegramMessage, sendTelegram, telegramConfig, type TelegramChat } from "@/lib/notify/telegram";
 
 function deepMerge<T>(base: T, patch: unknown): T {
   if (!patch || typeof patch !== "object" || Array.isArray(patch)) return (patch as T) ?? base;
@@ -75,5 +77,30 @@ export async function deletePlanLimitAction(input: { id: string }) {
     if (error) throw new Error(error.message);
     await audit(session, "plan_limit.deleted", { type: "plan_limit", id });
     revalidatePath("/usage");
+  });
+}
+
+/** Sends a test alert to the given chats (or the saved ones) so the admin can confirm delivery. */
+export async function sendTelegramTestAction(input: { chatIds: string[] }) {
+  return runAction(async () => {
+    const session = await requireAdmin({ limit: { prefix: "telegram_test", tokens: 10, windowSeconds: 600 } });
+    const settings = appSettingsSchema.parse(deepMerge(await loadSettings(), { telegram: { chatIds: input.chatIds } }));
+    const html = formatTelegramMessage(
+      { kind: "test", severity: "info", title: "Star Growth Hub alerts are working", body: `Sent by ${session.fullName ?? session.loginId ?? session.email} from Settings.`, link: "/settings" },
+      appUrl(),
+    );
+    const r = await sendTelegram(telegramConfig(settings), html);
+    if (!r.ok) throw new Error(r.errors.join("; "));
+    await audit(session, "telegram.test_sent", { type: "app_settings", id: "1" });
+  });
+}
+
+/** Lists chats that recently messaged the bot, to pick alert recipients. */
+export async function findTelegramChatsAction() {
+  return runAction<TelegramChat[]>(async () => {
+    await requireAdmin({ limit: { prefix: "telegram_test", tokens: 10, windowSeconds: 600 } });
+    const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
+    if (!token) throw new Error("TELEGRAM_BOT_TOKEN is not set.");
+    return findTelegramChats(token);
   });
 }

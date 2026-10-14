@@ -25,6 +25,22 @@ export const appSettingsSchema = z.object({
       handoff: z.string().max(1024).default("Thanks! A member of our team will reply to you here shortly."),
     })
     .prefault({}),
+  /** Alerts forwarded to Telegram. The bot token stays in the environment (TELEGRAM_BOT_TOKEN). */
+  telegram: z
+    .object({
+      enabled: z.boolean().default(true),
+      /** Telegram chats that receive alerts: user IDs, group IDs (negative) or @channel names. */
+      chatIds: z.array(z.string().regex(/^-?\d{1,20}$|^@[A-Za-z0-9_]{5,32}$/)).max(10).default([]),
+      events: z
+        .object({
+          handoff: z.boolean().default(true),
+          handoffMessages: z.boolean().default(true),
+          leads: z.boolean().default(true),
+          problems: z.boolean().default(true),
+        })
+        .prefault({}),
+    })
+    .prefault({}),
   /** E.164 digits without "+" — conversations from these numbers are marked as tests. */
   testPhoneNumbers: z.array(z.string().regex(/^\d{6,15}$/)).max(20).default([]),
   window: z
