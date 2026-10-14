@@ -18,6 +18,9 @@ function graphUrl(path: string) {
 
 async function graphFetch(path: string, init: RequestInit & { json?: unknown }, attempts = 2): Promise<Record<string, unknown>> {
   const env = serverEnv();
+  if (!env.META_ACCESS_TOKEN) {
+    throw new SendError("META_ACCESS_TOKEN is not configured — add the System User access token to the environment.", { transient: false });
+  }
   let lastError: SendError | null = null;
   for (let i = 0; i < attempts; i++) {
     let res: Response;

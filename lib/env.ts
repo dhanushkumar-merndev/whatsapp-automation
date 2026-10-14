@@ -24,7 +24,8 @@ const serverSchema = publicSchema.extend({
   SUPABASE_SECRET_KEY: nonEmpty,
   META_APP_SECRET: nonEmpty,
   META_WEBHOOK_VERIFY_TOKEN: nonEmpty,
-  META_ACCESS_TOKEN: nonEmpty,
+  // Optional at boot so inbound webhooks are still recorded; sending fails with a clear error without it.
+  META_ACCESS_TOKEN: z.string().optional(),
   META_GRAPH_API_VERSION: z.string().regex(/^v\d+\.\d+$/).default("v23.0"),
   META_WABA_ID: nonEmpty,
   META_PHONE_NUMBER_ID: nonEmpty,

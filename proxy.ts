@@ -33,6 +33,10 @@ export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const isPublic = PUBLIC_PREFIXES.some((p) => path === p.replace(/\/$/, "") || path.startsWith(p));
 
+  if (!signedIn && path.startsWith("/api/")) {
+    // APIs answer with 401 instead of redirecting to the login page.
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "X-Robots-Tag": "noindex, nofollow" } });
+  }
   if (!signedIn && !isPublic) {
     const login = request.nextUrl.clone();
     login.pathname = "/login";
