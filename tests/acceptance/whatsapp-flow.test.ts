@@ -263,6 +263,11 @@ describe("Acceptance — customer-initiated WhatsApp automation", () => {
       crmSyncStatus: "synced",
     });
     expect(h.crm.calls).toHaveLength(1);
+    // The team is alerted (dashboard bell, and Telegram when configured).
+    const alert = h.store.notifications.find((n) => n.kind === "lead_submitted");
+    expect(alert).toMatchObject({ title: "New lead: Asha Kumar", link: `/leads/${lead.id}` });
+    expect(alert?.body).toContain("Service: Social Media Management");
+    expect(alert?.body).toContain("Phone: +919876543210");
     const payload = h.crm.calls[0].delivery.payload as { event_id: string; event_type: string; data: Record<string, unknown> };
     expect(h.crm.calls[0].integration.id).toBe(integration.id);
     expect(payload.event_id).toBe(`lead.submitted:${lead.id}`);

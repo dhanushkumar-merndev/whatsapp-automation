@@ -513,6 +513,22 @@ async function executeNode(ctx: RunContext, node: FlowNode): Promise<NodeResult>
       patch.status = qualified ? "qualified" : "new";
       const lead = await deps.store.upsertLead({ execution: exec, conversation: ctx.conversation, contact: ctx.contact, patch });
       exec.context.leadId = lead.id;
+      const details: [string, string | undefined][] = [
+        ["Phone", `+${ctx.contact.waId}`],
+        ["Service", patch.service],
+        ["Business", patch.business_name],
+        ["Email", patch.email],
+        ["Requirements", patch.requirements],
+      ];
+      await deps.store.notify({
+        kind: "lead_submitted",
+        severity: "info",
+        title: `${ctx.conversation.isTest ? "[Test] " : ""}New lead: ${patch.name ?? `+${ctx.contact.waId}`}`,
+        body: details.filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join("\n"),
+        link: `/leads/${lead.id}`,
+        entityType: "lead",
+        entityId: lead.id,
+      });
       if (cfg.updateContact) {
         const contactPatch: { name?: string; business_name?: string; email?: string } = {};
         if (patch.name) contactPatch.name = patch.name;
