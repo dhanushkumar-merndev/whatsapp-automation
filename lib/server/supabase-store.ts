@@ -324,8 +324,13 @@ export class SupabaseStore implements AppStore {
   }
 
   async getFlowVersion(versionId: string): Promise<FlowVersionRecord | null> {
+    // flows ↔ flow_versions are linked twice (flow_id and flows.published_version_id): name the FK.
     const r = check(
-      await this.db.from("flow_versions").select("id, flow_id, version, definition, flows(name)").eq("id", versionId).maybeSingle(),
+      await this.db
+        .from("flow_versions")
+        .select("id, flow_id, version, definition, flows!flow_versions_flow_id_fkey(name)")
+        .eq("id", versionId)
+        .maybeSingle(),
       "load flow version",
     );
     if (!r) return null;
