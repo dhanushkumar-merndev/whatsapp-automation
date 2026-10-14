@@ -213,6 +213,12 @@ async function handleInbound(deps: PipelineDeps, conversationId: string, msg: Pe
     return;
   }
 
+  // A closed conversation re-opens when the customer writes again.
+  if (conversation.status === "closed") {
+    await store.updateConversation(conversation.id, { status: "open" });
+    conversation.status = "open";
+  }
+
   // 4. Conversation is with a human: record only.
   if (conversation.status === "handoff") {
     await store.markInbound(msg.id, "ignored", "conversation_in_handoff");
