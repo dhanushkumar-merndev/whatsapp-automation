@@ -513,7 +513,7 @@ async function executeNode(ctx: RunContext, node: FlowNode): Promise<NodeResult>
       patch.status = qualified ? "qualified" : "new";
       const lead = await deps.store.upsertLead({ execution: exec, conversation: ctx.conversation, contact: ctx.contact, patch });
       exec.context.leadId = lead.id;
-      const details: [string, string | undefined][] = [
+      const details: [string, string | null | undefined][] = [
         ["Phone", `+${ctx.contact.waId}`],
         ["Service", patch.service],
         ["Business", patch.business_name],

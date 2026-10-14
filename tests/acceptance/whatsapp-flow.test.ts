@@ -111,6 +111,18 @@ describe("Acceptance — customer-initiated WhatsApp automation", () => {
     expect(h.store.notifications.some((n) => n.kind === "handoff")).toBe(true);
   });
 
+  it("8c. messages during a handoff are not answered by the bot but alert the team", async () => {
+    const h = createHarness();
+    await h.say("Hi");
+    await h.say("HUMAN");
+    const sent = h.sender.sent.length;
+    await h.say("Please call me after 5pm");
+    expect(h.sender.sent.length).toBe(sent);
+    const alert = h.store.notifications.find((n) => n.kind === "handoff_message");
+    expect(alert).toMatchObject({ title: "Message from Asha (+919876543210)", body: "Please call me after 5pm" });
+    expect(alert?.link).toMatch(/^\/conversations\//);
+  });
+
   it("9. a valid service selection (number, tap or title) continues the workflow", async () => {
     for (const answer of ["2", "tap", "social media management"]) {
       const h = createHarness();

@@ -219,8 +219,18 @@ async function handleInbound(deps: PipelineDeps, conversationId: string, msg: Pe
     conversation.status = "open";
   }
 
-  // 4. Conversation is with a human: record only.
+  // 4. Conversation is with a human: record only, and alert the team.
   if (conversation.status === "handoff") {
+    const who = contact.name ?? contact.profileName;
+    await store.notify({
+      kind: "handoff_message",
+      severity: "info",
+      title: `Message from ${who ? `${who} (+${contact.waId})` : `+${contact.waId}`}`,
+      body: (input.text || input.replyTitle || "(photo, file or other non-text message)").slice(0, 500),
+      link: `/conversations/${conversation.id}`,
+      entityType: "conversation",
+      entityId: conversation.id,
+    });
     await store.markInbound(msg.id, "ignored", "conversation_in_handoff");
     return;
   }

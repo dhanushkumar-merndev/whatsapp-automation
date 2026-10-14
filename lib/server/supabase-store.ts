@@ -4,6 +4,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { decryptSecret } from "@/lib/crypto";
 import { hashIdentifier } from "@/lib/ratelimit";
 import { flowDefinitionSchema } from "@/lib/engine/schema";
+import { appUrl } from "@/lib/env";
+import { forwardNotification, telegramEventFor } from "@/lib/notify/telegram";
+import { loadSettings } from "@/lib/settings/server";
 import {
   ACTIVE_EXECUTION_STATUSES,
   OPEN_LEAD_STATUSES,
@@ -729,6 +732,17 @@ export class SupabaseStore implements AppStore {
       entity_id: input.entityId ?? null,
     });
     if (error) console.warn("[notify] failed", error.message);
+    await this.forwardToTelegram(input);
+  }
+
+  /** Sends the alert to Telegram when a bot token is set and that alert type is switched on. Never throws. */
+  private async forwardToTelegram(input: NotificationInput) {
+    if (!telegramEventFor(input.kind) || !process.env.TELEGRAM_BOT_TOKEN) return;
+    try {
+      await forwardNotification(input, { settings: await loadSettings(), baseUrl: appUrl() });
+    } catch (e) {
+      console.warn("[telegram] forward failed", e instanceof Error ? e.message : String(e));
+    }
   }
 
   async listCrmIntegrations(input: { enabledOnly: boolean; id?: string | null }) {
