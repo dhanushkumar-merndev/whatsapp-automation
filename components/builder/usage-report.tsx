@@ -21,7 +21,7 @@ function fmtQuota(q: QuotaUsage, v: number) {
 export function LevelPill({ level }: { level: WarningLevel }) {
   const s = LEVEL_STYLES[level];
   return (
-    <span className={cn("inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-medium", s.bg, s.text)}>
+    <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium", s.bg, s.text)}>
       <s.Icon className="size-3" />
       {LEVEL_LABEL[level]}
     </span>

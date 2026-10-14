@@ -27,7 +27,7 @@ export function Palette({ onAdd, hasTrigger }: { onAdd: (type: NodeType) => void
       <div className="border-b p-3">
         <div className="relative">
           <Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search nodes…" className="h-8 pl-8 text-sm" />
+          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search nodes" className="h-9 rounded-full bg-muted pl-8 text-sm border-transparent" />
         </div>
         <p className="mt-2 text-[11px] text-muted-foreground">Drag onto the canvas or click to add.</p>
       </div>
@@ -54,7 +54,7 @@ export function Palette({ onAdd, hasTrigger }: { onAdd: (type: NodeType) => void
                       }}
                       onClick={() => onAdd(d.type)}
                       title={d.description}
-                      className="flex w-full items-start gap-2 rounded-md border border-transparent px-2 py-1.5 text-left hover:border-border hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-40"
+                      className="flex w-full items-start gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded" style={{ background: `${d.color}1a`, color: d.color }}>
                         <Icon className="size-3.5" />

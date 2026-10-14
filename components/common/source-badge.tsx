@@ -35,7 +35,7 @@ export function SourceBadge({ source, className }: { source: DataSource; classNa
       <TooltipTrigger asChild>
         <span
           className={cn(
-            "inline-flex cursor-help items-center rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ring-1 ring-inset",
+            "inline-flex cursor-help items-center rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ring-1 ring-inset",
             s.cls,
             className,
           )}

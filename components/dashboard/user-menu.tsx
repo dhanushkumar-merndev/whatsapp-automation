@@ -18,7 +18,7 @@ export function UserMenu({ name, role }: { name: string; role: string }) {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="sm" className="gap-2">
-          <span className="flex size-6 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <span className="flex size-7 items-center justify-center rounded-full bg-foreground text-background">
             <UserRound className="size-3.5" />
           </span>
           <span className="hidden max-w-40 truncate sm:inline">{name}</span>

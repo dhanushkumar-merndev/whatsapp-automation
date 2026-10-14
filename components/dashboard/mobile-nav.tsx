@@ -17,7 +17,7 @@ export function MobileNav({ role }: { role: Role }) {
           <Menu />
         </Button>
       </SheetTrigger>
-      <SheetContent side="left" className="w-64 p-4">
+      <SheetContent side="left" className="w-[280px] bg-sidebar p-3">
         <SheetHeader className="p-0">
           <SheetTitle>
             <Logo />

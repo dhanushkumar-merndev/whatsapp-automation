@@ -24,16 +24,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   const displayName = session.fullName || session.loginId || session.email;
   return (
-    <div className="flex min-h-screen bg-muted/30">
+    <div className="flex min-h-screen bg-background">
       <Sidebar role={session.role} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur lg:px-6">
+        <header className="sticky top-0 z-30 flex h-14 items-center gap-1.5 bg-background/95 px-3 backdrop-blur lg:px-5">
           <MobileNav role={session.role} />
           <div className="flex-1" />
           <NotificationsMenu items={(items ?? []) as NotificationItem[]} unread={count ?? 0} />
           <UserMenu name={displayName} role={session.role} />
         </header>
-        <main className="flex-1 px-4 py-6 lg:px-8">{children}</main>
+        <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 pt-2 pb-10 lg:px-8">{children}</main>
       </div>
     </div>
   );

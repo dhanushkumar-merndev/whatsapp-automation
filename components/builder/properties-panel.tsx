@@ -478,7 +478,7 @@ function NodeForm({ type, c, set, errors }: { type: NodeType; c: Config; set: (p
                     key={f}
                     type="button"
                     onClick={() => set({ qualifyWhen: on ? qualify.filter((x) => x !== f) : [...qualify, f] })}
-                    className={`rounded-md border px-2 py-0.5 text-[11px] ${on ? "border-primary bg-primary/10 text-primary" : "text-muted-foreground"}`}
+                    className={`rounded-full border px-2.5 py-0.5 text-[11px] ${on ? "border-foreground bg-foreground text-background" : "text-muted-foreground"}`}
                   >
                     {LEAD_FIELD_LABELS[f]}
                   </button>

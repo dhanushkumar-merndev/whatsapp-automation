@@ -74,8 +74,8 @@ export function EstimatorPanel({
               type="button"
               onClick={() => set({ customersPerDay: p })}
               className={cn(
-                "rounded-md border px-2 py-1 text-xs tabular-nums",
-                a.customersPerDay === p ? "border-primary bg-primary/10 font-medium text-primary" : "hover:bg-muted",
+                "rounded-full border px-3 py-1 text-xs tabular-nums transition-colors",
+                a.customersPerDay === p ? "border-foreground bg-foreground font-medium text-background" : "hover:bg-muted",
               )}
             >
               {p}
@@ -86,7 +86,7 @@ export function EstimatorPanel({
             min={0}
             value={a.customersPerDay}
             onChange={(e) => set({ customersPerDay: Math.max(0, Number(e.target.value) || 0) })}
-            className={cn("h-7 w-20 text-xs tabular-nums", !isPreset && "border-primary")}
+            className={cn("h-7 w-20 rounded-full text-xs tabular-nums", !isPreset && "border-foreground")}
             aria-label="Custom customers per day"
           />
         </div>

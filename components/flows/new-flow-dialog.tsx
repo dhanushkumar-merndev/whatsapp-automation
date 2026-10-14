@@ -43,9 +43,9 @@ export function NewFlowDialog({ defaultOpen = false }: { defaultOpen?: boolean }
                 key={t.id}
                 type="button"
                 onClick={() => setTemplate(t.id)}
-                className={cn("rounded-lg border p-3 text-left", template === t.id ? "border-primary ring-2 ring-primary/20" : "hover:bg-muted/50")}
+                className={cn("rounded-2xl border p-4 text-left transition-colors", template === t.id ? "border-foreground ring-1 ring-foreground" : "hover:bg-muted/60")}
               >
-                <t.Icon className="mb-2 size-4 text-primary" />
+                <t.Icon className="mb-2 size-4" />
                 <div className="text-sm font-medium">{t.title}</div>
                 <p className="mt-0.5 text-xs text-muted-foreground">{t.desc}</p>
               </button>
