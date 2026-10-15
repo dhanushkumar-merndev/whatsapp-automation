@@ -347,10 +347,11 @@ describe("Acceptance — customer-initiated WhatsApp automation", () => {
     expect(h.sender.texts().at(-1)).toBe("What's your name? (v2)");
   });
 
-  it("21. paused workflows stop automatic execution safely", async () => {
+  it("21. pausing a workflow stops it safely, including open chats", async () => {
     const h = createHarness();
     await h.say("Hi");
     h.store.setFlowStatus(h.flow.flowId, "paused");
+    h.store.stopFlowRuns(h.flow.flowId);
     const before = h.sender.sent.length;
     h.clock.advance(5);
     await h.runDueJobs();
@@ -359,6 +360,32 @@ describe("Acceptance — customer-initiated WhatsApp automation", () => {
     // New messages do not start the paused flow.
     await h.say("Hello?", { from: "919800000001" });
     expect(h.sender.sent.length).toBe(before);
+  });
+
+  it("21b. making another workflow live lets open chats finish on the old one", async () => {
+    const h = createHarness();
+    await h.say("Hi");
+    const next = h.store.addFlow({
+      name: "New enquiry",
+      status: "active",
+      definition: {
+        nodes: [
+          { id: "t", type: "trigger", position: { x: 0, y: 0 }, data: { label: "", config: {} } },
+          { id: "m", type: "send_message", position: { x: 0, y: 100 }, data: { label: "", config: { text: "New flow here" } } },
+        ],
+        edges: [{ id: "e", source: "t", target: "m", sourceHandle: "out" }],
+      },
+    });
+    h.store.setFlowStatus(h.flow.flowId, "paused"); // replaced, not stopped
+    h.clock.advance(5);
+    await h.runDueJobs();
+    expect(h.sender.texts().at(-1)).toBe("May I know your name, please?");
+    await h.say("Asha Kumar");
+    expect(h.lead()?.name).toBe("Asha Kumar");
+    // A new customer gets the new live workflow.
+    await h.say("Hi", { from: "919800000001" });
+    expect(h.sender.texts().at(-1)).toBe("New flow here");
+    expect([...h.store.executions.values()].at(-1)!.flowId).toBe(next.flowId);
   });
 });
 

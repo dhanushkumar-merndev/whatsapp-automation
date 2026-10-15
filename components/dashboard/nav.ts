@@ -1,4 +1,5 @@
 import {
+  Gauge,
   Image as ImageIcon,
   LayoutDashboard,
   MessagesSquare,
@@ -32,6 +33,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/conversations", label: "Conversations", icon: MessagesSquare, role: "staff", section: "Workspace" },
   { href: "/media", label: "Media Library", icon: ImageIcon, role: "admin", section: "Automation" },
   { href: "/crm", label: "CRM Integrations", icon: Plug, role: "admin", section: "System" },
+  { href: "/usage", label: "Usage", icon: Gauge, role: "admin", section: "System" },
   { href: "/logs", label: "Execution Logs", icon: ScrollText, role: "admin", section: "System" },
   { href: "/settings", label: "Settings", icon: Settings, role: "admin", section: "System" },
 ];

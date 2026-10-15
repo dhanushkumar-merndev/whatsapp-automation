@@ -126,6 +126,18 @@ export class MemoryStore implements AppStore {
     this.flows.get(flowId)!.status = status;
   }
 
+  /** Mirrors the Pause action: cancels the flow's delayed steps and parks its open chats. */
+  stopFlowRuns(flowId: string) {
+    for (const j of this.jobs.values()) if (j.flowId === flowId && j.status === "scheduled") j.status = "cancelled";
+    for (const e of this.executions.values()) {
+      if (e.flowId === flowId && (e.status === "waiting_input" || e.status === "waiting_delay")) {
+        e.status = "paused";
+        e.awaiting = null;
+        e.completedAt = this.iso();
+      }
+    }
+  }
+
   addMedia(asset: Partial<MediaAssetRecord> & { name: string }): MediaAssetRecord {
     const rec: MediaAssetRecord = {
       id: uuid(),

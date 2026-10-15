@@ -25,8 +25,8 @@ export function FlowRowActions({ id, status, published }: { id: string; status: 
       if (
         s === "archived" &&
         !(await confirm({
-          title: "Archive this flow?",
-          description: "It stops running and is hidden from the list. You can still find it under “Show archived”.",
+          title: "Archive this workflow?",
+          description: "It stops, including chats in progress, and is hidden from the list. You can still find it under “Show archived”.",
           confirmLabel: "Archive",
           destructive: true,
         }))
@@ -36,36 +36,36 @@ export function FlowRowActions({ id, status, published }: { id: string; status: 
       const r = await setFlowStatusAction({ flowId: id, status: s });
       if (!r.ok) toast.error(r.error);
       else {
-        toast.success(`Flow ${s}`);
+        toast.success({ active: "Now live", testing: "Now used for test numbers", paused: "Workflow paused", archived: "Workflow archived" }[s]);
         router.refresh();
       }
     });
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon-sm" disabled={pending} aria-label="Flow actions">
+        <Button variant="ghost" size="icon-sm" disabled={pending} aria-label="Workflow actions">
           <MoreHorizontal />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem asChild>
           <Link href={`/flows/${id}`}>
-            <Pencil /> Open in builder
+            <Pencil /> Open
           </Link>
         </DropdownMenuItem>
         {status !== "active" && published && (
           <DropdownMenuItem onSelect={() => setStatus("active")}>
-            <Play /> Activate
+            <Play /> Make live
           </DropdownMenuItem>
         )}
         {status !== "testing" && published && (
           <DropdownMenuItem onSelect={() => setStatus("testing")}>
-            <FlaskConical /> Test numbers only
+            <FlaskConical /> Use for test numbers
           </DropdownMenuItem>
         )}
         {(status === "active" || status === "testing") && (
           <DropdownMenuItem onSelect={() => setStatus("paused")}>
-            <Pause /> Pause
+            <Pause /> Pause (stops open chats)
           </DropdownMenuItem>
         )}
         <DropdownMenuItem onSelect={() => start(async () => void (await duplicateFlowAction({ flowId: id })))}>

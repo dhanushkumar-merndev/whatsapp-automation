@@ -255,7 +255,9 @@ async function handleInbound(deps: PipelineDeps, msg: PendingInbound, state: Tur
   if (active) {
     const flowStatus = state.activeFlowStatus;
     const stale = now.getTime() - new Date(active.lastActivityAt).getTime();
-    if (flowStatus !== "active" && flowStatus !== "testing") {
+    // A workflow replaced by another live one is "paused" but lets open chats finish
+    // (an explicit Pause stops them up front); draft / archived / missing stop here.
+    if (flowStatus !== "active" && flowStatus !== "testing" && flowStatus !== "paused") {
       await stopExecution(deps, active.id, "cancelled", `Flow is ${flowStatus ?? "missing"}`);
       await store.setExecutionStatus(active.id, "paused", `Flow is ${flowStatus ?? "missing"}`);
     } else if (active.status === "waiting_input" && stale > settings.execution.resumeWithinHours * 3_600_000) {

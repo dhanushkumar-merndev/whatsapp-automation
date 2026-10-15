@@ -26,6 +26,7 @@ import {
   ArrowLeft,
   Check,
   Copy,
+  FileJson,
   FlaskConical,
   Loader2,
   MoreHorizontal,
@@ -89,6 +90,8 @@ import { PublishDialog } from "./publish-dialog";
 import { StepPicker } from "./step-picker";
 import { VersionHistory, type VersionItem } from "./version-history";
 import { EditorContext, type CrmOption, type EditorActions, type MediaOption } from "./editor-context";
+import { ImportFlowDialog } from "@/components/flows/import-flow-dialog";
+import { exportFlowJson } from "@/lib/flows/import";
 
 export interface FlowEditorProps {
   flow: {
@@ -108,6 +111,12 @@ export interface FlowEditorProps {
 }
 
 const nodeTypes = { flowNode: FlowNode };
+const STATUS_TOAST = {
+  active: "Now live for all customers",
+  testing: "Now used for test numbers",
+  paused: "Workflow paused",
+  archived: "Workflow archived",
+} as const;
 const edgeTypes = { [EDGE_TYPE]: InsertEdge };
 /** Autosave waits this long after the last change (drafts are rate limited per minute). */
 const AUTOSAVE_MS = 2000;
@@ -153,6 +162,7 @@ function EditorInner({ flow, versions, media, crm, settings }: FlowEditorProps) 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [path, setPath] = useState<{ visited: string[]; current: string | null } | null>(null);
   const [tested, setTested] = useState(false);
   const [dropPicker, setDropPicker] = useState<{ left: number; top: number; flow: { x: number; y: number }; source: string; handle: string } | null>(null);
@@ -477,8 +487,8 @@ function EditorInner({ flow, versions, media, crm, settings }: FlowEditorProps) 
       if (
         status === "archived" &&
         !(await confirm({
-          title: "Archive this flow?",
-          description: "It stops running and is hidden from the flows list. You can still find it under “Show archived”.",
+          title: "Archive this workflow?",
+          description: "It stops, including chats in progress, and is hidden from the list. You can still find it under “Show archived”.",
           confirmLabel: "Archive",
           destructive: true,
         }))
@@ -488,8 +498,8 @@ function EditorInner({ flow, versions, media, crm, settings }: FlowEditorProps) 
       const r = await setFlowStatusAction({ flowId: flow.id, status });
       if (!r.ok) toast.error(r.error);
       else {
-        const cancelled = (r.data as { cancelled?: number } | undefined)?.cancelled ?? 0;
-        toast.success(`Flow ${status}${cancelled ? ` · ${cancelled} pending delayed step(s) cancelled` : ""}`);
+        const stopped = (r.data as { stopped?: number } | undefined)?.stopped ?? 0;
+        toast.success(`${STATUS_TOAST[status]}${stopped ? ` · ${stopped} open chat(s) stopped` : ""}`);
         router.refresh();
       }
     });
@@ -770,6 +780,21 @@ function EditorInner({ flow, versions, media, crm, settings }: FlowEditorProps) 
               <DropdownMenuItem onSelect={runLayout}>
                 <Wand2 /> Tidy up layout
               </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={async () => {
+                  try {
+                    await navigator.clipboard.writeText(exportFlowJson(definition, { name, description: flow.description }));
+                    toast.success("JSON copied — paste it into ChatGPT with the changes you want");
+                  } catch {
+                    toast.error("Couldn't copy to the clipboard");
+                  }
+                }}
+              >
+                <Copy /> Copy JSON for ChatGPT
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={flow.status === "archived"} onSelect={() => setImportOpen(true)}>
+                <FileJson /> Replace from JSON…
+              </DropdownMenuItem>
               <DropdownMenuItem className="md:hidden" onSelect={undo}>
                 <Undo2 /> Undo
               </DropdownMenuItem>
@@ -779,21 +804,21 @@ function EditorInner({ flow, versions, media, crm, settings }: FlowEditorProps) 
               <DropdownMenuSeparator />
               {flow.status !== "active" && (
                 <DropdownMenuItem disabled={!flow.publishedVersionId} onSelect={() => changeStatus("active")}>
-                  <Play /> Activate for all customers
+                  <Play /> Make live
                 </DropdownMenuItem>
               )}
               {flow.status !== "testing" && (
                 <DropdownMenuItem disabled={!flow.publishedVersionId} onSelect={() => changeStatus("testing")}>
-                  <FlaskConical /> Test numbers only
+                  <FlaskConical /> Use for test numbers
                 </DropdownMenuItem>
               )}
               {(flow.status === "active" || flow.status === "testing") && (
                 <DropdownMenuItem onSelect={() => changeStatus("paused")}>
-                  <Pause /> Pause flow
+                  <Pause /> Pause (stops open chats)
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem onSelect={() => startStatus(async () => void (await duplicateFlowAction({ flowId: flow.id })))}>
-                <Copy /> Duplicate flow
+                <Copy /> Duplicate workflow
               </DropdownMenuItem>
               {flow.status !== "archived" && (
                 <>
@@ -900,6 +925,18 @@ function EditorInner({ flow, versions, media, crm, settings }: FlowEditorProps) 
           </SheetContent>
         </Sheet>
       )}
+
+      <ImportFlowDialog
+        mode="replace"
+        flowId={flow.id}
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onReplaced={() => {
+          // The server draft changed: reload so the canvas starts from it.
+          skipUnloadGuard.current = true;
+          window.location.reload();
+        }}
+      />
 
       <PublishDialog
         open={publishOpen}

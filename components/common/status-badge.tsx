@@ -60,7 +60,7 @@ const STATUS_TONES: Record<string, Tone> = {
   disabled: "red",
 };
 
-export function StatusBadge({ status, tone, className }: { status: string; tone?: Tone; className?: string }) {
+export function StatusBadge({ status, tone, label, className }: { status: string; tone?: Tone; label?: string; className?: string }) {
   const t = tone ?? STATUS_TONES[status] ?? "gray";
   return (
     <span
@@ -70,7 +70,7 @@ export function StatusBadge({ status, tone, className }: { status: string; tone?
         className,
       )}
     >
-      {status.replace(/_/g, " ")}
+      {label ?? status.replace(/_/g, " ")}
     </span>
   );
 }

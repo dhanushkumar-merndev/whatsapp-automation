@@ -267,6 +267,50 @@ describe("flow versions and executions", () => {
   });
 });
 
+describe("one live workflow", () => {
+  const service = { role: "service_role" };
+  async function publishedFlow(name: string) {
+    const f = await one<{ id: string }>(`insert into public.flows (name) values ($1) returning id`, [name]);
+    const v = await one<{ id: string }>(
+      `insert into public.flow_versions (flow_id, version, definition) values ($1, 1, '{"nodes":[],"edges":[]}') returning id`,
+      [f.id],
+    );
+    await db.query(`update public.flows set published_version_id = $2 where id = $1`, [f.id, v.id]);
+    return f.id;
+  }
+  const status = async (id: string) => (await one<{ status: string }>(`select status from public.flows where id = $1`, [id])).status;
+  const setStatus = (id: string, s: string) =>
+    asRole(db, "service_role", service, (tx) => tx.query<{ r: string | null }>(`select public.set_flow_status($1, $2) as r`, [id, s]));
+
+  it("making a workflow live pauses the previous live one", async () => {
+    await db.query(`update public.flows set status = 'paused' where status in ('active', 'testing')`);
+    const a = await publishedFlow("A");
+    const b = await publishedFlow("B");
+    await setStatus(a, "active");
+    const r = await setStatus(b, "active");
+    expect(r.rows[0].r).toBe(a);
+    expect(await status(a)).toBe("paused");
+    expect(await status(b)).toBe("active");
+    // A separate test-number workflow can run alongside.
+    await setStatus(a, "testing");
+    expect(await status(a)).toBe("testing");
+    expect(await status(b)).toBe("active");
+  });
+
+  it("never allows two live workflows, nor an unpublished one", async () => {
+    const c = await one<{ id: string }>(`insert into public.flows (name) values ('C') returning id`);
+    await expect(setStatus(c.id, "active")).rejects.toThrow(/Publish the workflow/);
+    await expect(db.query(`update public.flows set status = 'active' where id = $1`, [c.id])).rejects.toThrow(/flows_one_live/);
+  });
+
+  it("only admins can change workflow status", async () => {
+    const d = await publishedFlow("D");
+    await expect(
+      asRole(db, "authenticated", { sub: ADMIN, role: "authenticated", aal: "aal1" }, (tx) => tx.query(`select public.set_flow_status($1, 'active')`, [d])),
+    ).rejects.toThrow(/not authorised/);
+  });
+});
+
 describe("row level security", () => {
   it("anon cannot read leads or conversations", async () => {
     await expect(asRole(db, "anon", {}, (tx) => tx.query(`select * from public.conversations`))).rejects.toThrow(

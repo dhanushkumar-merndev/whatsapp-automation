@@ -80,7 +80,7 @@ async function resumeClaimed(deps: PipelineDeps, job: ScheduledJobRecord): Promi
     return { status: "skipped", detail: `execution_${exec?.status ?? "missing"}` };
   }
   const flowStatus = job.flowId === exec.flowId ? jobFlowStatus : await store.getFlowStatus(exec.flowId);
-  if (flowStatus !== "active" && flowStatus !== "testing") {
+  if (flowStatus !== "active" && flowStatus !== "testing" && flowStatus !== "paused") {
     await store.setExecutionStatus(exec.id, "paused", `Flow is ${flowStatus ?? "missing"}`);
     await store.finishScheduledJob(job.id, "cancelled", "flow_not_active");
     return { status: "skipped", detail: "flow_not_active" };

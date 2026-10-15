@@ -68,7 +68,7 @@ export const NODE_REGISTRY: { [K in NodeType]: NodeDefinition<K> } = {
   wait: {
     type: "wait",
     label: "Wait",
-    description: "Delay the next step. Runs through QStash, so no server stays open.",
+    description: "Pause before the next step. Short waits show “typing…”; long ones are scheduled.",
     category: "control",
     color: "#d97706",
     hasInput: true,

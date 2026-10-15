@@ -10,6 +10,8 @@ import { loadSettings } from "@/lib/settings/server";
 import { flowDefinitionSchema, type FlowDefinition } from "@/lib/engine/schema";
 import { validateFlow, type GraphValidation } from "@/lib/engine/validate-graph";
 import { blankFlowDefinition } from "@/lib/flows/blank-flow";
+import { buildAiPrompt } from "@/lib/flows/ai-prompt";
+import { importFlowJson } from "@/lib/flows/import";
 import { qstashClient } from "@/lib/qstash";
 
 const uuid = z.uuid();
@@ -39,6 +41,64 @@ export async function createFlowAction(input: { name: string }) {
     return data.id as string;
   });
   if (result.ok && result.data) redirect(`/flows/${result.data}`);
+  return result;
+}
+
+/** The ChatGPT prompt, including the current media files and CRM integrations. */
+export async function getAiPromptAction(): Promise<ActionResult<string>> {
+  return runAction(async () => {
+    await requireAdmin();
+    const supabase = await createClient();
+    const [{ data: media }, { data: crm }] = await Promise.all([
+      supabase.from("media_assets").select("id, name, kind").eq("status", "ready").is("deleted_at", null).order("created_at", { ascending: false }),
+      supabase.from("crm_integrations").select("id, name, enabled").order("created_at"),
+    ]);
+    return buildAiPrompt({ media: media ?? [], crm: crm ?? [] });
+  });
+}
+
+/**
+ * Creates a workflow from pasted JSON (e.g. from ChatGPT), or replaces an
+ * existing workflow's draft with it. Saved as a draft: publish it to go live.
+ */
+export async function importFlowAction(input: { json: string; flowId?: string | null; name?: string }) {
+  const result = await runAction(async () => {
+    const s = await loadSettings();
+    const session = await requireAdmin({
+      limit: { prefix: "flow_create", tokens: s.rateLimits.flowCreatesPerHour, windowSeconds: 3600 },
+    });
+    const json = z.string().max(500_000, "The JSON is too large").parse(input.json);
+    const parsed = importFlowJson(json);
+    if (!parsed.definition) throw new Error(parsed.errors[0] ?? "The JSON could not be imported.");
+    const definition = flowDefinitionSchema.parse(parsed.definition);
+    const supabase = await createClient();
+
+    if (input.flowId) {
+      const flowId = uuid.parse(input.flowId);
+      const { data: current, error: readError } = await supabase.from("flows").select("status").eq("id", flowId).single();
+      if (readError) throw new Error(readError.message);
+      if (current.status === "archived") throw new Error("Archived workflows cannot be edited. Duplicate it instead.");
+      const { error } = await supabase
+        .from("flows")
+        .update({ draft_definition: definition, draft_updated_at: new Date().toISOString(), updated_by: session.userId })
+        .eq("id", flowId);
+      if (error) throw new Error(error.message);
+      await audit(session, "flow.draft_imported", { type: "flow", id: flowId }, { steps: definition.nodes.length });
+      revalidatePath(`/flows/${flowId}`);
+      return { flowId, created: false };
+    }
+
+    const name = z.string().trim().min(1).max(120).parse(input.name?.trim() || parsed.name || "Imported workflow");
+    const { data, error } = await supabase
+      .from("flows")
+      .insert({ name, description: parsed.description, draft_definition: definition, created_by: session.userId, updated_by: session.userId })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    await audit(session, "flow.imported", { type: "flow", id: data.id }, { steps: definition.nodes.length });
+    return { flowId: data.id as string, created: true };
+  });
+  if (result.ok && result.data?.created) redirect(`/flows/${result.data.flowId}`);
   return result;
 }
 
@@ -147,15 +207,12 @@ export async function publishFlowAction(input: {
     const now = new Date().toISOString();
     const { error: updateError } = await supabase
       .from("flows")
-      .update({
-        published_version_id: created.id,
-        status: mode,
-        draft_definition: definition,
-        draft_updated_at: now,
-        updated_by: session.userId,
-      })
+      .update({ published_version_id: created.id, draft_definition: definition, draft_updated_at: now, updated_by: session.userId })
       .eq("id", flowId);
     if (updateError) throw new Error(updateError.message);
+    // Becomes the live (or test) workflow; the previous one is paused but its open chats may finish.
+    const { error: statusError } = await supabase.rpc("set_flow_status", { p_flow_id: flowId, p_status: mode, p_user: session.userId });
+    if (statusError) throw new Error(statusError.message);
 
     await audit(session, "flow.published", { type: "flow", id: flowId }, { version, mode });
     revalidatePath("/flows");
@@ -164,8 +221,8 @@ export async function publishFlowAction(input: {
   });
 }
 
-/** Cancels pending delayed jobs of a flow (DB + QStash) and parks their executions. */
-async function cancelFlowJobs(flowId: string) {
+/** Stops every running chat of a workflow: cancels delayed steps (DB + QStash) and parks the executions. */
+async function stopFlowRuns(flowId: string) {
   const admin = createAdminClient();
   const { data: jobs } = await admin
     .from("scheduled_jobs")
@@ -182,33 +239,33 @@ async function cancelFlowJobs(flowId: string) {
       }
     }
   }
-  await admin
+  const { data: stopped } = await admin
     .from("flow_executions")
-    .update({ status: "paused", awaiting: null, error: "Flow paused by an administrator", completed_at: new Date().toISOString() })
+    .update({ status: "paused", awaiting: null, error: "Workflow paused by an administrator", completed_at: new Date().toISOString() })
     .eq("flow_id", flowId)
-    .eq("status", "waiting_delay");
-  return jobs?.length ?? 0;
+    .in("status", ["waiting_delay", "waiting_input"])
+    .select("id");
+  return stopped?.length ?? 0;
 }
 
+/**
+ * Live / Test make this the one live (or test-number) workflow and pause the
+ * previous one, whose open chats may finish. Pause, Draft and Archive stop the
+ * workflow's open chats as well.
+ */
 export async function setFlowStatusAction(input: { flowId: string; status: "active" | "testing" | "paused" | "archived" | "draft" }) {
   return runAction(async () => {
     const session = await requireAdmin({ limit: await writeLimits() });
     const flowId = uuid.parse(input.flowId);
     const status = z.enum(["active", "testing", "paused", "archived", "draft"]).parse(input.status);
     const supabase = await createClient();
-    const { data: flow, error } = await supabase.from("flows").select("published_version_id, status").eq("id", flowId).single();
+    const { data: replaced, error } = await supabase.rpc("set_flow_status", { p_flow_id: flowId, p_status: status, p_user: session.userId });
     if (error) throw new Error(error.message);
-    if ((status === "active" || status === "testing") && !flow.published_version_id) {
-      throw new Error("Publish the flow before activating it.");
-    }
-    const { error: updateError } = await supabase.from("flows").update({ status, updated_by: session.userId }).eq("id", flowId);
-    if (updateError) throw new Error(updateError.message);
-    let cancelled = 0;
-    if (status === "paused" || status === "archived" || status === "draft") cancelled = await cancelFlowJobs(flowId);
-    await audit(session, `flow.${status}`, { type: "flow", id: flowId }, { cancelledJobs: cancelled });
+    const stopped = status === "active" || status === "testing" ? 0 : await stopFlowRuns(flowId);
+    await audit(session, `flow.${status}`, { type: "flow", id: flowId }, { stoppedChats: stopped, replaced: replaced ?? null });
     revalidatePath("/flows");
     revalidatePath(`/flows/${flowId}`);
-    return { cancelled };
+    return { stopped, replaced: (replaced as string | null) ?? null };
   });
 }
 
