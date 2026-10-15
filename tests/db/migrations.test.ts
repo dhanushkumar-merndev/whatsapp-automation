@@ -267,6 +267,24 @@ describe("flow versions and executions", () => {
   });
 });
 
+describe("keep warm", () => {
+  const configure = (url: string) =>
+    asRole(db, "service_role", { role: "service_role" }, (tx) => tx.query<{ r: string }>(`select public.configure_keep_warm($1) as r`, [url]));
+
+  it("only accepts an https site and is a no-op without pg_cron / pg_net", async () => {
+    expect((await configure("http://localhost:3000")).rows[0].r).toBe("skipped");
+    expect((await configure("https://evil.example.com/x?y")).rows[0].r).toBe("skipped");
+    expect((await configure("https://app.example.com/")).rows[0].r).toBe("unavailable");
+    expect((await one<{ n: number }>(`select count(*)::int as n from sgh_private.keep_warm`)).n).toBe(0);
+  });
+
+  it("can't be called by signed-in users", async () => {
+    await expect(
+      asRole(db, "authenticated", { sub: ADMIN, role: "authenticated", aal: "aal2" }, (tx) => tx.query(`select public.configure_keep_warm('https://x.example.com')`)),
+    ).rejects.toThrow(/permission denied/);
+  });
+});
+
 describe("one live workflow", () => {
   const service = { role: "service_role" };
   async function publishedFlow(name: string) {

@@ -4,6 +4,7 @@ import { processConversation, type PipelineDeps } from "@/lib/core/process-conve
 import { handleScheduledJob } from "@/lib/core/jobs";
 import { attemptCrmDelivery } from "@/lib/engine/crm-attempt";
 import { preuploadMedia } from "@/lib/whatsapp/graph";
+import { appUrl } from "@/lib/env";
 import { toIntegration } from "./supabase-store";
 
 type Report = Record<string, number | string>;
@@ -109,6 +110,10 @@ export async function runSweep(deps: PipelineDeps): Promise<Report> {
   } catch (e) {
     report.mediaPreuploaded = `failed: ${e instanceof Error ? e.message : String(e)}`;
   }
+
+  // 8. Keep the webhook warm: Supabase pings it every minute (see the keep_warm migration).
+  const { data: warm, error: warmError } = await admin.rpc("configure_keep_warm", { p_url: appUrl() });
+  report.keepWarm = warmError ? `failed: ${warmError.message}` : String(warm);
 
   return report;
 }

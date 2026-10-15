@@ -5,7 +5,7 @@ import { verifyMetaSignature } from "@/lib/whatsapp/signature";
 import { ingestWebhook } from "@/lib/core/webhook-ingest";
 import type { PipelineDeps } from "@/lib/core/process-conversation";
 import { processIngested } from "@/lib/core/conversation-control";
-import { createPipelineDeps, createSender, createStore } from "@/lib/server/pipeline";
+import { createPipelineDeps, createSender, createStore, warmUp } from "@/lib/server/pipeline";
 import { createLogger } from "@/lib/server/logger";
 
 export const runtime = "nodejs";
@@ -21,9 +21,13 @@ function safeEqual(a: string, b: string) {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
-/** Meta webhook verification handshake. */
+/** Meta webhook verification handshake; `?warm=1` is the keep-warm ping. */
 export async function GET(req: NextRequest) {
   const p = req.nextUrl.searchParams;
+  if (p.get("warm") === "1") {
+    await warmUp().catch((e) => log.warn("warm-up failed", { error: e instanceof Error ? e.message : String(e) }));
+    return new Response(null, { status: 204 });
+  }
   const mode = p.get("hub.mode");
   const token = p.get("hub.verify_token") ?? "";
   const challenge = p.get("hub.challenge") ?? "";

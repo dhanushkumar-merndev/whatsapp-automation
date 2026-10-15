@@ -62,7 +62,7 @@ Workflows start only when a customer messages first. Free-form replies are block
 1. Link the project with `npx vercel link`. Then add every variable from `.env` under Project → Settings → Environment Variables, or with `npx vercel env add`.
 2. Deploy with `npx vercel --prod`. `vercel.json` registers the daily cron (`/api/cron/sweep`, 03:30 UTC). Vercel sends `Authorization: Bearer $CRON_SECRET` automatically.
 3. **Plan**: Hobby is for personal, non-commercial use, and its cron jobs run at most once a day. For commercial production, use **Pro**.
-4. **Keep it warm (faster first reply)**: a function that has been idle starts cold and the first reply takes a few seconds longer. Add a free monitor (e.g. cron-job.org or UptimeRobot) that requests `https://<your-app>/api/webhooks/whatsapp` every 5 minutes. That request is answered with 403 straight away and only keeps the function warm.
+4. **Kept warm automatically (faster first reply)**: a function that has been idle starts cold, which adds 4–5 s to the first reply. Supabase (`pg_cron` + `pg_net`, free) requests `https://<your-app>/api/webhooks/whatsapp?warm=1` every minute. The daily sweep switches this on with `NEXT_PUBLIC_APP_URL` (it must be the https site); to switch it on straight after the first deploy, run the sweep once: `curl -H "Authorization: Bearer $CRON_SECRET" https://<your-app>/api/cron/sweep`. Check it in Supabase → Integrations → Cron (job `sgh-keep-warm`).
 
 ## 7. Local development
 

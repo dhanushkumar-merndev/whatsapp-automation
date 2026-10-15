@@ -3,7 +3,8 @@ import { isProduction } from "@/lib/env";
 import { loadSettings } from "@/lib/settings/server";
 import { getRateLimiter } from "@/lib/ratelimit";
 import { QStashScheduler } from "@/lib/qstash";
-import { MetaSender } from "@/lib/whatsapp/graph";
+import { accessTokenFor, MetaSender } from "@/lib/whatsapp/graph";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { HttpCrmDispatcher } from "@/lib/crm/dispatch";
 import type { PipelineDeps } from "@/lib/core/process-conversation";
 import type { AppStore } from "@/lib/core/types";
@@ -25,6 +26,30 @@ export function createStore(storeOptions: SupabaseStoreOptions = {}): AppStore {
 
 export function createSender(): MessageSender {
   return new MetaSender();
+}
+
+const WARM_EVERY_MS = 20_000;
+let warmedAt = 0;
+
+/**
+ * Keep-warm ping (pg_cron, every minute): loads the settings, the live
+ * workflows and the account tokens into this instance's caches, so the next
+ * customer message doesn't start from a cold, empty instance. Read-only.
+ */
+export async function warmUp(): Promise<void> {
+  if (Date.now() - warmedAt < WARM_EVERY_MS) return;
+  warmedAt = Date.now();
+  const admin = createAdminClient();
+  const store = createStore();
+  const [, flows, accounts] = await Promise.all([
+    loadSettings(),
+    admin.from("flows").select("published_version_id").in("status", ["active", "testing"]).not("published_version_id", "is", null),
+    admin.from("whatsapp_accounts").select("phone_number_id").eq("enabled", true),
+  ]);
+  await Promise.all([
+    ...(flows.data ?? []).map((f) => store.getFlowVersion(f.published_version_id as string)),
+    ...(accounts.data ?? []).map((a) => accessTokenFor({ phoneNumberId: a.phone_number_id as string })),
+  ]);
 }
 
 /**

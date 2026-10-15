@@ -6,7 +6,8 @@ import { metaInboundPayload } from "../helpers/meta";
 
 const h = createHarness();
 
-vi.mock("@/lib/server/pipeline", () => ({ createPipelineDeps: async () => h.deps, createStore: () => h.store, createSender: () => h.sender }));
+const warmUp = vi.fn(async () => {});
+vi.mock("@/lib/server/pipeline", () => ({ createPipelineDeps: async () => h.deps, createStore: () => h.store, createSender: () => h.sender, warmUp }));
 vi.mock("next/server", async (orig) => {
   const mod = await orig<typeof import("next/server")>();
   // Run after() callbacks immediately in tests.
@@ -42,6 +43,18 @@ describe("Meta webhook endpoint", () => {
     expect(await ok.text()).toBe("12345");
     const bad = await GET(new NextRequest("https://app.example.com/api/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=nope&hub.challenge=1"));
     expect(bad.status).toBe(403);
+  });
+
+  it("answers the keep-warm ping with 204 after warming the caches, recording nothing", async () => {
+    const { GET } = await import("@/app/api/webhooks/whatsapp/route");
+    const messages = h.store.messages.length;
+    const res = await GET(new NextRequest("https://app.example.com/api/webhooks/whatsapp?warm=1"));
+    expect(res.status).toBe(204);
+    expect(warmUp).toHaveBeenCalledTimes(1);
+    expect(h.store.messages.length).toBe(messages);
+    // A failed warm-up still answers (the ping only keeps the function alive).
+    warmUp.mockRejectedValueOnce(new Error("db down"));
+    expect((await GET(new NextRequest("https://app.example.com/api/webhooks/whatsapp?warm=1"))).status).toBe(204);
   });
 
   it("rejects unsigned or wrongly signed events without recording anything", async () => {
