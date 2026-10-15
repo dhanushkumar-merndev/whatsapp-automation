@@ -17,14 +17,16 @@ export async function GET(_req: NextRequest, ctx: RouteContext<"/api/inbound-med
   if (!/^[\w.=:+/-]{5,200}$/.test(waMessageId)) return new Response("Not found", { status: 404 });
   const { data: msg } = await createAdminClient()
     .from("messages")
-    .select("payload")
+    .select("payload, conversations(whatsapp_accounts(phone_number_id))")
     .eq("wa_message_id", waMessageId)
     .eq("direction", "inbound")
     .maybeSingle();
   const mediaId = (msg?.payload as { media_id?: unknown } | null)?.media_id;
   if (typeof mediaId !== "string" || !mediaId) return new Response("Not found", { status: 404 });
   try {
-    const file = await fetchInboundMedia(mediaId);
+    const conv = (Array.isArray(msg?.conversations) ? msg.conversations[0] : msg?.conversations) as { whatsapp_accounts?: { phone_number_id?: string } | { phone_number_id?: string }[] } | null;
+    const acc = Array.isArray(conv?.whatsapp_accounts) ? conv.whatsapp_accounts[0] : conv?.whatsapp_accounts;
+    const file = await fetchInboundMedia(mediaId, acc?.phone_number_id);
     // Customer files are untrusted: only images, video, audio and PDFs open inline, always sandboxed.
     const inline = /^(image|video|audio)\/|^application\/pdf$/.test(file.contentType);
     return new Response(file.body, {

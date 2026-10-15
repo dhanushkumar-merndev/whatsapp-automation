@@ -11,6 +11,7 @@ export type TelegramEvent = keyof AppSettings["telegram"]["events"];
 
 const EVENT_BY_KIND: Record<string, TelegramEvent> = {
   handoff: "handoff",
+  handoff_app: "handoff",
   handoff_message: "handoffMessages",
   lead_submitted: "leads",
   booking_created: "bookings",
@@ -22,7 +23,7 @@ const EVENT_BY_KIND: Record<string, TelegramEvent> = {
 };
 
 const ICON: Record<NotificationInput["severity"], string> = { info: "🔔", warning: "⚠️", critical: "🚨" };
-const ICON_BY_KIND: Record<string, string> = { handoff: "🙋", handoff_message: "💬", lead_submitted: "✅", booking_created: "📅", team_alert: "📣" };
+const ICON_BY_KIND: Record<string, string> = { handoff: "🙋", handoff_app: "📱", handoff_message: "💬", lead_submitted: "✅", booking_created: "📅", team_alert: "📣" };
 
 export function telegramEventFor(kind: string): TelegramEvent | null {
   return EVENT_BY_KIND[kind] ?? null;

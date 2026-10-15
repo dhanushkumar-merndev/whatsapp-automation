@@ -81,6 +81,10 @@ export interface ConversationSnapshot {
   status: "open" | "handoff" | "closed";
   lastInboundAt: string | null;
   isTest: boolean;
+  /** Who handed the chat to a person, and when a person last replied (phone app or dashboard). */
+  handoffBy?: "customer" | "flow" | "team" | "business_app" | "telegram" | null;
+  handoffAt?: string | null;
+  humanLastReplyAt?: string | null;
 }
 
 export interface ExecutionContext {
@@ -378,7 +382,15 @@ export interface EngineStore {
   }): Promise<LeadRecord>;
   getLead(id: string): Promise<LeadRecord | null>;
   updateContact(id: string, patch: Partial<{ name: string | null; business_name: string | null; email: string | null; opted_out: boolean; cooldown_until: string | null }>): Promise<void>;
-  updateConversation(id: string, patch: Partial<{ status: "open" | "handoff" | "closed"; handoff_reason: string | null; handoff_at: string | null }>): Promise<void>;
+  updateConversation(
+    id: string,
+    patch: Partial<{
+      status: "open" | "handoff" | "closed";
+      handoff_reason: string | null;
+      handoff_at: string | null;
+      handoff_by: NonNullable<ConversationSnapshot["handoffBy"]> | null;
+    }>,
+  ): Promise<void>;
 
   createScheduledJob(input: {
     kind: ScheduledJobKind;

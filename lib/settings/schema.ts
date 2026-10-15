@@ -64,6 +64,15 @@ export const appSettingsSchema = z.object({
         .prefault({}),
     })
     .prefault({}),
+  /** Same number in the WhatsApp Business app and the API. */
+  coexistence: z
+    .object({
+      /** "pause": replying from the phone app hands that chat to a person until you hand it back. */
+      onAppReply: z.enum(["pause", "ignore"]).default("pause"),
+      /** Hand chats back to the bot after this many hours without a human reply (0 = never). */
+      autoResumeHours: z.number().int().min(0).max(24 * 14).default(0),
+    })
+    .prefault({}),
   /** E.164 digits without "+" — conversations from these numbers are marked as tests. */
   testPhoneNumbers: z.array(z.string().regex(/^\d{6,15}$/)).max(20).default([]),
   window: z

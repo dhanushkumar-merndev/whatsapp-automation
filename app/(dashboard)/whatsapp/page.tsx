@@ -6,22 +6,51 @@ import { CopyButton } from "@/components/common/copy-button";
 import { StatusBadge } from "@/components/common/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AccountForm, TestAccountButton, DeleteAccountButton } from "@/components/whatsapp/account-form";
+import { ConnectBusinessApp } from "@/components/whatsapp/connect-business-app";
+import { RetrySyncButton } from "@/components/whatsapp/retry-sync-button";
 import { requirePageSession } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { fmtAgo } from "@/lib/format";
 
 export const metadata: Metadata = { title: "WhatsApp Accounts" };
 
+/** Meta allows the one-time contacts / history share only within 24 hours of connecting. */
+function withinSyncWindow(onboardedAt: string) {
+  return Date.now() - new Date(onboardedAt).getTime() < 24 * 3_600_000;
+}
+
 export default async function WhatsAppPage() {
   await requirePageSession("admin");
   const supabase = await createClient();
-  const { data: accounts } = await supabase.from("whatsapp_accounts").select("*").order("created_at");
+  const { data: accounts } = await supabase
+    .from("whatsapp_accounts")
+    .select(
+      "id, name, waba_id, phone_number_id, display_phone_number, verified_name, quality_rating, enabled, last_verified_at, coexistence, is_on_biz_app, onboarded_at, contacts_sync_requested_at, history_sync_requested_at",
+    )
+    .order("created_at");
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").replace(/\/+$/, "");
-  const envWaba = process.env.META_WABA_ID ?? "";
+  const metaAppId = process.env.NEXT_PUBLIC_META_APP_ID ?? "";
+  const metaConfigId = process.env.NEXT_PUBLIC_META_CONFIG_ID ?? "";
+  const connect = metaAppId && metaConfigId ? <ConnectBusinessApp appId={metaAppId} configId={metaConfigId} graphVersion={process.env.META_GRAPH_API_VERSION ?? "v23.0"} /> : null;
 
   return (
     <>
-      <PageHeader title="WhatsApp Accounts" description="Official Meta WhatsApp Cloud API numbers. Events for unregistered numbers are rejected." actions={<AccountForm />} />
+      <PageHeader
+        title="WhatsApp Accounts"
+        description="Your WhatsApp numbers. A Business app number keeps working on your phone while the bot answers here (coexistence)."
+        actions={
+          <>
+            <AccountForm />
+            {connect}
+          </>
+        }
+      />
+      {!connect && (
+        <p className="mb-5 rounded-2xl border p-3 text-sm text-muted-foreground">
+          To connect a number that is on the WhatsApp Business app, set <code>NEXT_PUBLIC_META_APP_ID</code> and <code>NEXT_PUBLIC_META_CONFIG_ID</code> (see the setup
+          guide), then reload this page.
+        </p>
+      )}
       <Card className="mb-5">
         <CardHeader>
           <CardTitle className="text-sm">Webhook configuration (Meta → WhatsApp → Configuration)</CardTitle>
@@ -39,8 +68,8 @@ export default async function WhatsAppPage() {
             <div className="mt-1 rounded-xl bg-muted px-3 py-2 text-xs">The value of META_WEBHOOK_VERIFY_TOKEN (server environment; never shown here)</div>
           </div>
           <p className="text-xs text-muted-foreground sm:col-span-2">
-            Subscribe the <b>messages</b> field. Every request is verified with your App Secret (X-Hub-Signature-256). The bot only replies to customers
-            who message first.
+            Subscribe these fields: <b>messages</b>, and for a WhatsApp Business app number also <b>smb_message_echoes</b> (your replies from the
+            phone), <b>history</b> and <b>smb_app_state_sync</b> (contacts). Every request is verified with your App Secret (X-Hub-Signature-256).
           </p>
         </CardContent>
       </Card>
@@ -49,7 +78,7 @@ export default async function WhatsAppPage() {
           icon={Smartphone}
           title="No WhatsApp number yet"
           description="Add your Meta WhatsApp Cloud API number to start receiving customer messages."
-          action={<AccountForm />}
+          action={connect ?? <AccountForm />}
         />
       ) : (
         <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
@@ -84,9 +113,27 @@ export default async function WhatsAppPage() {
                     {a.last_verified_at ? fmtAgo(a.last_verified_at) : "never"}
                   </div>
                 </div>
-                {envWaba && a.waba_id !== envWaba && (
+                {a.coexistence && (
+                  <div className="space-y-1.5 rounded-xl bg-muted/60 p-2.5 text-xs">
+                    <div className="font-medium">WhatsApp Business app + bot (coexistence)</div>
+                    <div className="text-muted-foreground">
+                      {a.is_on_biz_app === false ? "Meta does not report this number as on the Business app." : "Your replies from the phone pause the bot in that chat."}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span>Contacts: {a.contacts_sync_requested_at ? `shared ${fmtAgo(a.contacts_sync_requested_at)}` : "not shared"}</span>
+                      <span>· History: {a.history_sync_requested_at ? `requested ${fmtAgo(a.history_sync_requested_at)}` : "not requested"}</span>
+                    </div>
+                    {a.onboarded_at && withinSyncWindow(a.onboarded_at) && (
+                      <div className="flex flex-wrap gap-2">
+                        {!a.contacts_sync_requested_at && <RetrySyncButton id={a.id} kind="smb_app_state_sync" label="Share contacts" />}
+                        {!a.history_sync_requested_at && <RetrySyncButton id={a.id} kind="history" label="Import chat history" />}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {!a.enabled && (
                   <p className="flex items-start gap-2 rounded-xl bg-warning/10 p-2 text-xs text-warning">
-                    <AlertTriangle className="mt-0.5 size-3.5 shrink-0" /> This WABA ID differs from META_WABA_ID; its webhook events will be rejected.
+                    <AlertTriangle className="mt-0.5 size-3.5 shrink-0" /> Disabled: messages to this number are ignored.
                   </p>
                 )}
                 <div className="flex flex-wrap gap-2">

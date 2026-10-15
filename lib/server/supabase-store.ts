@@ -33,6 +33,8 @@ import {
 import type {
   AppStore,
   BeginTurnResult,
+  BusinessEchoInput,
+  HistoryMessage,
   FlowStatus,
   InboundProcessingStatus,
   InboundRecordInput,
@@ -202,6 +204,9 @@ function toTurnState(r: Row | null): TurnState | null {
       status: cv.status as TurnState["conversation"]["status"],
       lastInboundAt: (cv.last_inbound_at as string) ?? null,
       isTest: Boolean(cv.is_test),
+      handoffBy: (cv.handoff_by as TurnState["conversation"]["handoffBy"]) ?? null,
+      handoffAt: (cv.handoff_at as string) ?? null,
+      humanLastReplyAt: (cv.human_last_reply_at as string) ?? null,
     },
     contact: {
       id: c.id as string,
@@ -330,6 +335,58 @@ export class SupabaseStore implements AppStore {
     };
   }
 
+  async recordBusinessEcho(input: BusinessEchoInput) {
+    const r = check(
+      await this.db.rpc("record_business_echo", {
+        p: {
+          phone_number_id: input.phoneNumberId,
+          waba_id: input.wabaId,
+          wa_id: input.waId,
+          wa_message_id: input.waMessageId,
+          type: input.type,
+          body: input.body,
+          payload: input.payload,
+          provider_timestamp: input.providerTimestamp,
+        },
+      }),
+      "record echo",
+    ) as Row;
+    if (r.ignored) return { ignored: true as const };
+    return { conversationId: r.conversation_id as string, duplicate: Boolean(r.duplicate), tookOver: Boolean(r.took_over) };
+  }
+
+  async recordHistory(input: { phoneNumberId: string; wabaId: string; waId: string; messages: HistoryMessage[] }) {
+    const n = check(
+      await this.db.rpc("record_history", {
+        p: {
+          phone_number_id: input.phoneNumberId,
+          waba_id: input.wabaId,
+          wa_id: input.waId,
+          messages: input.messages.map((m) => ({
+            direction: m.direction,
+            wa_message_id: m.waMessageId,
+            type: m.type,
+            body: m.body,
+            payload: m.payload,
+            provider_timestamp: m.providerTimestamp,
+          })),
+        },
+      }),
+      "record history",
+    );
+    return Number(n ?? 0);
+  }
+
+  async syncBusinessContacts(contacts: { waId: string; fullName: string | null; firstName: string | null; action: "add" | "remove" }[]) {
+    const n = check(
+      await this.db.rpc("sync_business_contacts", {
+        p: contacts.map((c) => ({ wa_id: c.waId, full_name: c.fullName, first_name: c.firstName, action: c.action })),
+      }),
+      "sync contacts",
+    );
+    return Number(n ?? 0);
+  }
+
   async applyStatus(input: StatusUpdateInput) {
     return Boolean(
       check(
@@ -403,7 +460,7 @@ export class SupabaseStore implements AppStore {
       await this.db
         .from("conversations")
         .select(
-          "id, contact_id, account_id, status, last_inbound_at, is_test, whatsapp_accounts(phone_number_id), contacts(id, wa_id, name, profile_name, business_name, email, opted_out, cooldown_until, is_test, tags, leads(created_at))",
+          "id, contact_id, account_id, status, last_inbound_at, is_test, handoff_by, handoff_at, human_last_reply_at, whatsapp_accounts(phone_number_id), contacts(id, wa_id, name, profile_name, business_name, email, opted_out, cooldown_until, is_test, tags, leads(created_at))",
         )
         .eq("id", conversationId)
         .in("contacts.leads.status", [...OPEN_LEAD_STATUSES])
@@ -424,6 +481,9 @@ export class SupabaseStore implements AppStore {
       status: r.status,
       lastInboundAt: r.last_inbound_at,
       isTest: r.is_test,
+      handoffBy: r.handoff_by ?? null,
+      handoffAt: r.handoff_at ?? null,
+      humanLastReplyAt: r.human_last_reply_at ?? null,
     };
     const contact: ContactSnapshot = {
       id: c.id as string,
@@ -758,7 +818,7 @@ export class SupabaseStore implements AppStore {
     check(await this.db.from("contacts").update(p).eq("id", id), "update contact");
   }
 
-  async updateConversation(id: string, patch: Partial<{ status: "open" | "handoff" | "closed"; handoff_reason: string | null; handoff_at: string | null }>) {
+  async updateConversation(id: string, patch: Parameters<AppStore["updateConversation"]>[1]) {
     check(await this.db.from("conversations").update(patch).eq("id", id), "update conversation");
   }
 

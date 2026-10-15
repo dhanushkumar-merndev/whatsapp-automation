@@ -29,6 +29,8 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },
+      // Meta's sign-up popup reports back to this page (Embedded Signup), so it may keep its opener.
+      { source: "/whatsapp", headers: [{ key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" }] },
       {
         source: "/api/:path*",
         headers: [{ key: "Cache-Control", value: "no-store" }],

@@ -98,6 +98,27 @@ export interface TurnState {
 
 export type BeginTurnResult = { locked: false } | { locked: true; pending: PendingInbound[]; state: TurnState | null };
 
+export interface BusinessEchoInput {
+  phoneNumberId: string;
+  wabaId: string;
+  /** The customer the business wrote to. */
+  waId: string;
+  waMessageId: string;
+  type: string;
+  body: string | null;
+  payload: Record<string, unknown>;
+  providerTimestamp: string;
+}
+
+export interface HistoryMessage {
+  direction: "inbound" | "outbound";
+  waMessageId: string;
+  type: string;
+  body: string | null;
+  payload: Record<string, unknown>;
+  providerTimestamp: string;
+}
+
 export type InboundProcessingStatus = "processed" | "rate_limited" | "ignored" | "failed";
 
 /** Everything the webhook/worker pipeline needs from persistence. */
@@ -134,6 +155,13 @@ export interface AppStore extends EngineStore {
     detail?: Record<string, unknown>;
   }): Promise<void>;
   countRecentSecurityEvents(scope: string, contactId: string, sinceIso: string): Promise<number>;
+
+  /** A message the business sent from the WhatsApp Business app (coexistence). */
+  recordBusinessEcho(input: BusinessEchoInput): Promise<{ ignored: true } | { ignored?: false; conversationId: string; duplicate: boolean; tookOver: boolean }>;
+  /** Imported chat history: stored only, never processed. Returns how many messages were new. */
+  recordHistory(input: { phoneNumberId: string; wabaId: string; waId: string; messages: HistoryMessage[] }): Promise<number>;
+  /** Names from the business's phone contacts. */
+  syncBusinessContacts(contacts: { waId: string; fullName: string | null; firstName: string | null; action: "add" | "remove" }[]): Promise<number>;
 
   /** Runs a side task (e.g. a typing indicator) without blocking; flush() waits for it. */
   background(what: string, task: () => Promise<unknown>): void;

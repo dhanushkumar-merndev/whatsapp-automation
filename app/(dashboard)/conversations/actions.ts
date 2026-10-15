@@ -8,7 +8,8 @@ import { isWindowOpen } from "@/lib/engine/window";
 import { loadSettings } from "@/lib/settings/server";
 import { SupabaseStore } from "@/lib/server/supabase-store";
 import { MetaSender } from "@/lib/whatsapp/graph";
-import { qstashClient } from "@/lib/qstash";
+import { createPipelineDeps } from "@/lib/server/pipeline";
+import { applyChatAction, type ChatAction } from "@/lib/core/conversation-control";
 
 /** A staff member replies manually — only inside the customer service window. */
 export async function sendManualReplyAction(input: { conversationId: string; text: string }) {
@@ -43,6 +44,8 @@ export async function sendManualReplyAction(input: { conversationId: string; tex
         message: { kind: "text", text },
       });
       await store.completeOutbound(key, { waMessageId });
+      // A person replied: counts for "hand back to the bot after N hours".
+      await (await createClient()).from("conversations").update({ human_last_reply_at: new Date().toISOString() }).eq("id", conversationId);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       await store.completeOutbound(key, { error: msg });
@@ -53,35 +56,24 @@ export async function sendManualReplyAction(input: { conversationId: string; tex
   });
 }
 
-/** Handoff (stop automation), resume automation, or close a conversation. */
-export async function setConversationStatusAction(input: { conversationId: string; status: "handoff" | "open" | "closed" }) {
+/**
+ * Who handles the chat: "human" (bot paused), "bot_on", "restart" (bot on and
+ * the live workflow starts now) or "close". Same rules as the Telegram buttons.
+ */
+export async function setConversationStatusAction(input: { conversationId: string; action: ChatAction }) {
   return runAction(async () => {
     const session = await requireAdmin({ role: "staff" });
-    const { conversationId, status } = z
-      .object({ conversationId: z.uuid(), status: z.enum(["handoff", "open", "closed"]) })
+    const { conversationId, action } = z
+      .object({ conversationId: z.uuid(), action: z.enum(["human", "bot_on", "restart", "close"]) })
       .parse(input);
-    const supabase = await createClient();
-    const patch: Record<string, unknown> = { status };
-    if (status === "handoff") {
-      patch.handoff_reason = "Taken over by a team member";
-      patch.handoff_at = new Date().toISOString();
-      patch.assigned_to = session.userId;
-    }
-    const { error } = await supabase.from("conversations").update(patch).eq("id", conversationId);
-    if (error) throw new Error(error.message);
-    if (status !== "open") {
-      // Stop any running automation for this conversation.
-      const store = new SupabaseStore();
-      const active = await store.getActiveExecution(conversationId);
-      if (active) {
-        await store.setExecutionStatus(active.id, status === "handoff" ? "handoff" : "cancelled", "Stopped by a team member");
-        for (const id of await store.cancelJobsForExecution(active.id)) {
-          await qstashClient().messages.cancel(id).catch(() => undefined);
-        }
-      }
-    }
-    await audit(session, `conversation.${status}`, { type: "conversation", id: conversationId });
+    const deps = await createPipelineDeps("dashboard.conversation");
+    const result = await applyChatAction(deps, conversationId, action, "team");
+    if (action === "human") await (await createClient()).from("conversations").update({ assigned_to: session.userId }).eq("id", conversationId);
+    await deps.store.flush();
+    await audit(session, `conversation.${action}`, { type: "conversation", id: conversationId }, { message: result.message });
     revalidatePath(`/conversations/${conversationId}`);
     revalidatePath("/conversations");
+    if (!result.ok) throw new Error(result.message);
+    return result.message;
   });
 }

@@ -1092,7 +1092,7 @@ async function executeNode(ctx: RunContext, node: FlowNode): Promise<NodeResult>
         const outcome = await sendOutbound(ctx, node, { kind: "text", text: renderTemplate(cfg.message, scope(ctx)) });
         if (outcome === "window_closed") deps.logger.warn("handoff message not sent: window closed", { executionId: exec.id });
       }
-      await deps.store.updateConversation(ctx.conversation.id, { status: "handoff", handoff_reason: cfg.reason, handoff_at: now });
+      await deps.store.updateConversation(ctx.conversation.id, { status: "handoff", handoff_reason: cfg.reason, handoff_at: now, handoff_by: "flow" });
       await deps.store.notify({
         kind: "handoff",
         severity: "warning",

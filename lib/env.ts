@@ -27,8 +27,9 @@ const serverSchema = publicSchema.extend({
   // Optional at boot so inbound webhooks are still recorded; sending fails with a clear error without it.
   META_ACCESS_TOKEN: z.string().optional(),
   META_GRAPH_API_VERSION: z.string().regex(/^v\d+\.\d+$/).default("v23.0"),
-  META_WABA_ID: nonEmpty,
-  META_PHONE_NUMBER_ID: nonEmpty,
+  // Optional since numbers are registered in the dashboard (Connect WhatsApp Business app).
+  META_WABA_ID: z.string().optional(),
+  META_PHONE_NUMBER_ID: z.string().optional(),
   QSTASH_URL: z.url().default("https://qstash.upstash.io"),
   QSTASH_TOKEN: nonEmpty,
   QSTASH_CURRENT_SIGNING_KEY: nonEmpty,

@@ -341,6 +341,65 @@ describe("contact tags", () => {
   });
 });
 
+describe("coexistence", () => {
+  const echo = (id: string) => ({
+    phone_number_id: "pn1",
+    waba_id: "waba",
+    wa_id: "919800000555",
+    wa_message_id: id,
+    type: "text",
+    body: "From the phone",
+    payload: {},
+    provider_timestamp: "2026-10-14T10:05:00Z",
+  });
+
+  it("an echo from the phone app hands the chat over once and never opens the reply window", async () => {
+    const first = (await one<{ r: Record<string, unknown> }>(`select public.record_business_echo($1) as r`, [echo("wamid.E1")])).r;
+    expect(first).toMatchObject({ duplicate: false, took_over: true });
+    const second = (await one<{ r: Record<string, unknown> }>(`select public.record_business_echo($1) as r`, [echo("wamid.E2")])).r;
+    expect(second.took_over).toBe(false);
+    const again = (await one<{ r: Record<string, unknown> }>(`select public.record_business_echo($1) as r`, [echo("wamid.E2")])).r;
+    expect(again.duplicate).toBe(true);
+    const c = await one<{ status: string; handoff_by: string; last_inbound_at: string | null }>(
+      `select status, handoff_by, last_inbound_at from public.conversations where id = $1`,
+      [first.conversation_id],
+    );
+    expect(c).toEqual({ status: "handoff", handoff_by: "business_app", last_inbound_at: null });
+    const m = await one<{ source: string; direction: string }>(`select source, direction from public.messages where wa_message_id = 'wamid.E1'`);
+    expect(m).toEqual({ source: "business_app", direction: "outbound" });
+  });
+
+  it("history is stored as already handled, and contact names reach new customers", async () => {
+    const n = await one<{ n: number }>(`select public.record_history($1) as n`, [
+      {
+        phone_number_id: "pn1",
+        waba_id: "waba",
+        wa_id: "919800000666",
+        messages: [
+          { direction: "inbound", wa_message_id: "wamid.H1", type: "text", body: "old", payload: {}, provider_timestamp: "2026-09-01T10:00:00Z" },
+          { direction: "outbound", wa_message_id: "wamid.H2", type: "text", body: "reply", payload: {}, provider_timestamp: "2026-09-01T10:01:00Z" },
+        ],
+      },
+    ]);
+    expect(n.n).toBe(2);
+    const h = await one<{ processing_status: string; source: string }>(`select processing_status, source from public.messages where wa_message_id = 'wamid.H1'`);
+    expect(h).toEqual({ processing_status: "ignored", source: "history" });
+
+    await db.query(`select public.sync_business_contacts($1)`, [[{ wa_id: "919800000777", full_name: "Ravi M", action: "add" }, { wa_id: "919800000888", full_name: "New Person", action: "add" }]]);
+    expect((await one<{ s: string }>(`select saved_name as s from public.contacts where wa_id = '919800000777'`)).s).toBe("Ravi M");
+    await db.query(`select public.record_inbound_message($1)`, [{ phone_number_id: "pn1", waba_id: "waba", wa_id: "919800000888", wa_message_id: "wamid.N1", type: "text", body: "Hi", payload: {} }]);
+    expect((await one<{ s: string }>(`select saved_name as s from public.contacts where wa_id = '919800000888'`)).s).toBe("New Person");
+  });
+
+  it("dashboard users can never read a number's access token", async () => {
+    await db.query(`update public.whatsapp_accounts set access_token_encrypted = 'v1:secret' where id = $1`, [ACCOUNT]);
+    const claims = { sub: ADMIN, role: "authenticated", aal: "aal2" };
+    await expect(asRole(db, "authenticated", claims, (tx) => tx.query(`select access_token_encrypted from public.whatsapp_accounts`))).rejects.toThrow(/permission denied/);
+    const ok = await asRole(db, "authenticated", claims, (tx) => tx.query<{ waba_id: string }>(`select waba_id from public.whatsapp_accounts`));
+    expect(ok.rows[0].waba_id).toBe("waba");
+  });
+});
+
 describe("row level security", () => {
   it("anon cannot read leads or conversations", async () => {
     await expect(asRole(db, "anon", {}, (tx) => tx.query(`select * from public.conversations`))).rejects.toThrow(

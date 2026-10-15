@@ -1,6 +1,7 @@
 import { MemoryStore } from "@/lib/core/memory-store";
 import { FakeCrm, RecordingScheduler, RecordingSender } from "@/lib/core/fakes";
-import { processConversation, type PipelineDeps } from "@/lib/core/process-conversation";
+import type { PipelineDeps } from "@/lib/core/process-conversation";
+import { processIngested } from "@/lib/core/conversation-control";
 import { ingestWebhook } from "@/lib/core/webhook-ingest";
 import { handleScheduledJob } from "@/lib/core/jobs";
 import { MemoryLimiter } from "@/lib/ratelimit";
@@ -30,6 +31,7 @@ export function createHarness(
   const crm = new FakeCrm();
   const settings = parseSettings(opts.settings ?? {});
   store.testPhoneNumbers = settings.testPhoneNumbers;
+  store.onAppReply = settings.coexistence.onAppReply;
   const deps: PipelineDeps = {
     store,
     sender,
@@ -49,7 +51,9 @@ export function createHarness(
     const result = await ingestWebhook({ store, now: clock.now }, payload);
     // Each delivery is its own request with its own in-request wait budget.
     if (deps.inlineWait) deps.inlineWait.budgetMs = 25_000;
-    for (const c of result.conversations) await processConversation(deps, c);
+    await processIngested(deps, result, (_id, e) => {
+      throw e;
+    });
     return result;
   }
 

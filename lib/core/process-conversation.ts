@@ -131,7 +131,8 @@ async function sendSystemText(
   }
 }
 
-async function stopExecution(deps: PipelineDeps, executionId: string, status: "cancelled" | "handoff", reason: string) {
+/** Ends a running execution and cancels its delayed steps (DB + QStash). */
+export async function stopExecution(deps: Pick<PipelineDeps, "store" | "scheduler" | "logger">, executionId: string, status: "cancelled" | "handoff", reason: string) {
   await deps.store.setExecutionStatus(executionId, status, reason);
   const qstashIds = await deps.store.cancelJobsForExecution(executionId);
   for (const id of qstashIds) {
@@ -240,6 +241,7 @@ async function handleInbound(deps: PipelineDeps, msg: PendingInbound, state: Tur
       status: "handoff",
       handoff_reason: "Customer requested a human",
       handoff_at: now.toISOString(),
+      handoff_by: "customer",
     });
     await sendSystemText(deps, conversation, contact, `sys:${msg.id}:human`, settings.messages.handoff);
     await store.notify({
@@ -261,7 +263,14 @@ async function handleInbound(deps: PipelineDeps, msg: PendingInbound, state: Tur
     conversation.status = "open";
   }
 
-  // 4. Conversation is with a human: record only, and alert the team.
+  // 4. Conversation is with a human: record only, and alert the team —
+  //    unless nobody replied for the auto hand-back period (Settings).
+  const autoResume = settings.coexistence.autoResumeHours;
+  const lastHuman = conversation.humanLastReplyAt ?? conversation.handoffAt;
+  if (conversation.status === "handoff" && autoResume > 0 && (!lastHuman || now.getTime() - new Date(lastHuman).getTime() > autoResume * 3_600_000)) {
+    await store.updateConversation(conversation.id, { status: "open", handoff_reason: null, handoff_by: null });
+    conversation.status = "open";
+  }
   if (conversation.status === "handoff") {
     const who = contact.name ?? contact.profileName;
     await store.notify({

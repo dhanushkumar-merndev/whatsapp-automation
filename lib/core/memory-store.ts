@@ -23,6 +23,8 @@ import type {
   AccountRecord,
   AppStore,
   BeginTurnResult,
+  BusinessEchoInput,
+  HistoryMessage,
   FlowStatus,
   InboundProcessingStatus,
   InboundRecordInput,
@@ -62,6 +64,7 @@ export interface MemoryMessage {
   providerTimestamp: string | null;
   createdAt: string;
   pricing?: { billable: boolean | null; category: string | null };
+  source?: "business_app" | "history";
 }
 
 interface MemoryFlow {
@@ -91,6 +94,9 @@ export class MemoryStore implements AppStore {
   securityEvents: { scope: string; identifier: string; contactId: string | null; createdAt: string }[] = [];
   /** Mirrors app_settings.testPhoneNumbers, which the database checks when recording a message. */
   testPhoneNumbers: string[] = [];
+  /** Mirrors app_settings.coexistence.onAppReply, which the database checks for echoes. */
+  onAppReply: "pause" | "ignore" = "pause";
+  businessContacts = new Map<string, { fullName: string | null; firstName: string | null }>();
   private tasks = new Set<Promise<unknown>>();
 
   constructor(private readonly now: () => Date = () => new Date()) {}
@@ -283,6 +289,124 @@ export class MemoryStore implements AppStore {
     };
     this.messages.push(msg);
     return { ...result, messageId: msg.id, duplicate: false };
+  }
+
+  /** Contact + conversation for a number, created when missing (echoes and history). */
+  private ensureConversation(accountId: string, waId: string) {
+    let contact = [...this.contacts.values()].find((c) => c.waId === waId);
+    if (!contact) {
+      contact = {
+        id: uuid(),
+        waId,
+        name: null,
+        profileName: null,
+        businessName: null,
+        email: null,
+        optedOut: false,
+        cooldownUntil: null,
+        isTest: false,
+        tags: [],
+        createdAt: this.iso(),
+      };
+      this.contacts.set(contact.id, contact);
+    }
+    let conv = [...this.conversations.values()].find((c) => c.contactId === contact!.id && c.accountId === accountId);
+    if (!conv) {
+      conv = {
+        id: uuid(),
+        contactId: contact.id,
+        accountId,
+        phoneNumberId: this.accounts.get(accountId)!.phoneNumberId,
+        status: "open",
+        lastInboundAt: null,
+        isTest: false,
+        lockToken: null,
+        lockExpiresAt: 0,
+      };
+      this.conversations.set(conv.id, conv);
+    }
+    return { contact, conv };
+  }
+
+  private resolveAccount(phoneNumberId: string, wabaId: string) {
+    return [...this.accounts.values()].find((a) => a.phoneNumberId === phoneNumberId && a.enabled && (!wabaId || a.wabaId === wabaId));
+  }
+
+  async recordBusinessEcho(input: BusinessEchoInput) {
+    const account = this.resolveAccount(input.phoneNumberId, input.wabaId);
+    if (!account) return { ignored: true as const };
+    const { contact, conv } = this.ensureConversation(account.id, input.waId);
+    if (this.messages.some((m) => m.waMessageId === input.waMessageId)) return { conversationId: conv.id, duplicate: true, tookOver: false };
+    this.messages.push({
+      id: uuid(),
+      conversationId: conv.id,
+      contactId: contact.id,
+      direction: "outbound",
+      waMessageId: input.waMessageId,
+      idempotencyKey: null,
+      type: input.type,
+      body: input.body,
+      payload: input.payload,
+      mediaAssetId: null,
+      status: "sent",
+      processingStatus: null,
+      processingNote: null,
+      executionId: null,
+      nodeId: null,
+      isTest: conv.isTest,
+      providerTimestamp: input.providerTimestamp,
+      createdAt: this.iso(),
+      source: "business_app",
+    });
+    conv.humanLastReplyAt = input.providerTimestamp;
+    const tookOver = this.onAppReply === "pause" && conv.status !== "handoff";
+    if (tookOver) {
+      conv.status = "handoff";
+      conv.handoffBy = "business_app";
+      conv.handoffAt = this.iso();
+    }
+    return { conversationId: conv.id, duplicate: false, tookOver };
+  }
+
+  async recordHistory(input: { phoneNumberId: string; wabaId: string; waId: string; messages: HistoryMessage[] }) {
+    const account = this.resolveAccount(input.phoneNumberId, input.wabaId);
+    if (!account) return 0;
+    const { contact, conv } = this.ensureConversation(account.id, input.waId);
+    let n = 0;
+    for (const m of input.messages) {
+      if (this.messages.some((x) => x.waMessageId === m.waMessageId)) continue;
+      this.messages.push({
+        id: uuid(),
+        conversationId: conv.id,
+        contactId: contact.id,
+        direction: m.direction,
+        waMessageId: m.waMessageId,
+        idempotencyKey: null,
+        type: m.type,
+        body: m.body,
+        payload: m.payload,
+        mediaAssetId: null,
+        status: m.direction === "inbound" ? "received" : "sent",
+        processingStatus: m.direction === "inbound" ? "ignored" : null,
+        processingNote: m.direction === "inbound" ? "history" : null,
+        executionId: null,
+        nodeId: null,
+        isTest: false,
+        providerTimestamp: m.providerTimestamp,
+        createdAt: this.iso(),
+        source: "history",
+      });
+      n++;
+    }
+    return n;
+  }
+
+  async syncBusinessContacts(contacts: { waId: string; fullName: string | null; firstName: string | null; action: "add" | "remove" }[]) {
+    for (const c of contacts) {
+      if (c.action === "remove") this.businessContacts.delete(c.waId);
+      else this.businessContacts.set(c.waId, { fullName: c.fullName, firstName: c.firstName });
+    }
+    return contacts.length;
   }
 
   async applyStatus(input: StatusUpdateInput) {
@@ -616,9 +740,12 @@ export class MemoryStore implements AppStore {
     if (patch.cooldown_until !== undefined) c.cooldownUntil = patch.cooldown_until;
   }
 
-  async updateConversation(id: string, patch: Partial<{ status: "open" | "handoff" | "closed" }>) {
+  async updateConversation(id: string, patch: Parameters<AppStore["updateConversation"]>[1]) {
     const c = this.conversations.get(id);
-    if (c && patch.status) c.status = patch.status;
+    if (!c) return;
+    if (patch.status) c.status = patch.status;
+    if (patch.handoff_by !== undefined) c.handoffBy = patch.handoff_by;
+    if (patch.handoff_at !== undefined) c.handoffAt = patch.handoff_at;
   }
 
   async createScheduledJob(input: {

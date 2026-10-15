@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { findTelegramChatsAction, sendTelegramTestAction, updateSettingsAction } from "@/app/(dashboard)/settings/actions";
 import type { AppSettings } from "@/lib/settings/schema";
 import { cn } from "@/lib/utils";
@@ -203,6 +204,7 @@ export function GeneralSettingsForm({ initial, telegramTokenSet }: { initial: Ap
         retention: s.retention,
         telegram: s.telegram,
         business: s.business,
+        coexistence: s.coexistence,
       });
       if (r.ok) {
         setSaved(current);
@@ -247,6 +249,33 @@ export function GeneralSettingsForm({ initial, telegramTokenSet }: { initial: Ap
       </Card>
 
       <BusinessCard s={s} setS={setS} />
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">WhatsApp Business app on the same number</CardTitle>
+          <CardDescription>What happens when you reply to a customer from the WhatsApp Business app on your phone.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1">
+            <Label className="text-xs">When I reply from the phone app</Label>
+            <Select value={s.coexistence.onAppReply} onValueChange={(v) => setS({ ...s, coexistence: { ...s.coexistence, onAppReply: v as "pause" | "ignore" } })}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pause">Pause the bot in that chat until I hand it back</SelectItem>
+                <SelectItem value="ignore">Keep the bot running</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground">Opening or reading a chat does nothing — only sending a message counts.</p>
+          </div>
+          <Num
+            label="Hand back to the bot after (hours without my reply, 0 = never)"
+            value={s.coexistence.autoResumeHours}
+            onChange={(n) => setS({ ...s, coexistence: { ...s.coexistence, autoResumeHours: Math.max(0, Math.min(336, n)) } })}
+          />
+        </CardContent>
+      </Card>
 
       <TelegramCard s={s} setS={setS} tokenSet={telegramTokenSet} />
 

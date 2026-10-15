@@ -3,6 +3,7 @@ import { serverEnv } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { SendError, type MediaAssetRecord, type MessageSender, type OutboundMessage } from "@/lib/engine/types";
 import { toMedia } from "@/lib/server/supabase-store";
+import { decryptSecret } from "@/lib/crypto";
 import { buildMessagePayload, classifyMetaError } from "./payload";
 
 const GRAPH = "https://graph.facebook.com";
@@ -19,10 +20,39 @@ function graphUrl(path: string) {
   return `${GRAPH}/${env.META_GRAPH_API_VERSION}/${path.replace(/^\//, "")}`;
 }
 
-async function graphFetch(path: string, init: RequestInit & { json?: unknown }, attempts = 2): Promise<Record<string, unknown>> {
+// Numbers onboarded with "Connect WhatsApp Business app" carry their own token;
+// others use META_ACCESS_TOKEN. Cached per instance; cleared when accounts change.
+const TOKEN_TTL_MS = 5 * 60_000;
+const tokenCache = new Map<string, { at: number; token: string | null }>();
+
+export function clearAccessTokenCache() {
+  tokenCache.clear();
+}
+
+/** The access token for a phone number id or WABA id. */
+export async function accessTokenFor(key: { phoneNumberId?: string; wabaId?: string }): Promise<string | undefined> {
+  const id = key.phoneNumberId ? `pn:${key.phoneNumberId}` : key.wabaId ? `waba:${key.wabaId}` : "";
+  const hit = id ? tokenCache.get(id) : undefined;
+  let token = hit && Date.now() - hit.at < TOKEN_TTL_MS ? hit.token : undefined;
+  if (token === undefined && id) {
+    const q = createAdminClient().from("whatsapp_accounts").select("access_token_encrypted").not("access_token_encrypted", "is", null);
+    const { data } = await (key.phoneNumberId ? q.eq("phone_number_id", key.phoneNumberId) : q.eq("waba_id", key.wabaId!)).limit(1).maybeSingle();
+    token = null;
+    try {
+      if (data?.access_token_encrypted) token = decryptSecret(data.access_token_encrypted as string);
+    } catch {
+      // Wrong/rotated APP_ENCRYPTION_KEY: fall back to the environment token.
+    }
+    tokenCache.set(id, { at: Date.now(), token });
+  }
+  return token ?? serverEnv().META_ACCESS_TOKEN;
+}
+
+async function graphFetch(path: string, init: RequestInit & { json?: unknown }, attempts = 2, token?: string): Promise<Record<string, unknown>> {
   const env = serverEnv();
-  if (!env.META_ACCESS_TOKEN) {
-    throw new SendError("META_ACCESS_TOKEN is not configured — add the System User access token to the environment.", { transient: false });
+  token ??= env.META_ACCESS_TOKEN;
+  if (!token) {
+    throw new SendError("No WhatsApp access token: connect the number again, or set META_ACCESS_TOKEN.", { transient: false });
   }
   let lastError: SendError | null = null;
   for (let i = 0; i < attempts; i++) {
@@ -32,7 +62,7 @@ async function graphFetch(path: string, init: RequestInit & { json?: unknown }, 
         ...init,
         body: init.json !== undefined ? JSON.stringify(init.json) : init.body,
         headers: {
-          Authorization: `Bearer ${env.META_ACCESS_TOKEN}`,
+          Authorization: `Bearer ${token}`,
           ...(init.json !== undefined ? { "Content-Type": "application/json" } : {}),
           ...init.headers,
         },
@@ -76,7 +106,7 @@ export async function ensureMetaMediaId(asset: MediaAssetRecord, phoneNumberId: 
   form.append("messaging_product", "whatsapp");
   form.append("type", asset.mimeType);
   form.append("file", new Blob([await blob.arrayBuffer()], { type: asset.mimeType }), asset.name);
-  const res = await graphFetch(`${phoneNumberId}/media`, { method: "POST", body: form });
+  const res = await graphFetch(`${phoneNumberId}/media`, { method: "POST", body: form }, 2, await accessTokenFor({ phoneNumberId }));
   const id = typeof res.id === "string" ? res.id : null;
   if (!id) throw new SendError("Meta did not return a media id");
   await admin
@@ -128,7 +158,7 @@ export class MetaSender implements MessageSender {
       mediaId = await ensureMetaMediaId(input.asset, input.phoneNumberId);
     }
     const payload = buildMessagePayload(input.to, input.message, mediaId);
-    const res = await graphFetch(`${input.phoneNumberId}/messages`, { method: "POST", json: payload });
+    const res = await graphFetch(`${input.phoneNumberId}/messages`, { method: "POST", json: payload }, 2, await accessTokenFor({ phoneNumberId: input.phoneNumberId }));
     const id = (res.messages as { id?: string }[] | undefined)?.[0]?.id;
     if (!id) throw new SendError("WhatsApp API returned no message id");
     return { waMessageId: id };
@@ -142,6 +172,7 @@ export class MetaSender implements MessageSender {
         json: { messaging_product: "whatsapp", status: "read", message_id: input.waMessageId, typing_indicator: { type: "text" } },
       },
       1,
+      await accessTokenFor({ phoneNumberId: input.phoneNumberId }),
     );
   }
 }
@@ -151,11 +182,12 @@ export class MetaSender implements MessageSender {
  * The media URL Meta returns needs the same access token and expires in minutes,
  * so it is fetched and streamed straight through.
  */
-export async function fetchInboundMedia(mediaId: string): Promise<{ body: ReadableStream<Uint8Array>; contentType: string }> {
-  const info = (await graphFetch(encodeURIComponent(mediaId), { method: "GET" }, 1)) as { url?: string; mime_type?: string };
+export async function fetchInboundMedia(mediaId: string, phoneNumberId?: string): Promise<{ body: ReadableStream<Uint8Array>; contentType: string }> {
+  const token = phoneNumberId ? await accessTokenFor({ phoneNumberId }) : serverEnv().META_ACCESS_TOKEN;
+  const info = (await graphFetch(encodeURIComponent(mediaId), { method: "GET" }, 1, token)) as { url?: string; mime_type?: string };
   if (!info.url) throw new SendError("Meta returned no download link for this file");
   const res = await fetch(info.url, {
-    headers: { Authorization: `Bearer ${serverEnv().META_ACCESS_TOKEN}` },
+    headers: { Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(20_000),
     cache: "no-store",
   });
@@ -179,6 +211,7 @@ export async function listMessageTemplates(wabaId: string): Promise<MessageTempl
     `${encodeURIComponent(wabaId)}/message_templates?fields=name,language,status,category,components&status=APPROVED&limit=200`,
     { method: "GET" },
     1,
+    await accessTokenFor({ wabaId }),
   )) as { data?: { name: string; language: string; status: string; category: string; components?: { type: string; text?: string }[] }[] };
   return (res.data ?? [])
     .filter((t) => t.status === "APPROVED")
@@ -191,11 +224,12 @@ export async function listMessageTemplates(wabaId: string): Promise<MessageTempl
 }
 
 /** Reads phone number details for the WhatsApp Accounts page ("Test connection"). */
-export async function fetchPhoneNumberInfo(phoneNumberId: string) {
+export async function fetchPhoneNumberInfo(phoneNumberId: string, token?: string) {
   const res = await graphFetch(
-    `${phoneNumberId}?fields=display_phone_number,verified_name,quality_rating,code_verification_status,platform_type,throughput`,
+    `${phoneNumberId}?fields=display_phone_number,verified_name,quality_rating,code_verification_status,platform_type,throughput,is_on_biz_app`,
     { method: "GET" },
     1,
+    token ?? (await accessTokenFor({ phoneNumberId })),
   );
   return res as {
     display_phone_number?: string;
@@ -204,5 +238,35 @@ export async function fetchPhoneNumberInfo(phoneNumberId: string) {
     code_verification_status?: string;
     platform_type?: string;
     throughput?: { level?: string };
+    is_on_biz_app?: boolean;
   };
+}
+
+// --- Embedded Signup (connect a WhatsApp Business app number) -----------------------
+
+/** Exchanges the one-time code from Embedded Signup (valid ~30 s) for a business token. */
+export async function exchangeSignupCode(code: string, appId: string): Promise<string> {
+  const env = serverEnv();
+  const url = new URL(graphUrl("oauth/access_token"));
+  url.searchParams.set("client_id", appId);
+  url.searchParams.set("client_secret", env.META_APP_SECRET);
+  url.searchParams.set("code", code);
+  const res = await fetch(url, { signal: AbortSignal.timeout(15_000), cache: "no-store" });
+  const body = (await res.json().catch(() => ({}))) as { access_token?: string } & GraphError;
+  if (!res.ok || !body.access_token) throw new SendError(`Meta did not accept the sign-up code: ${body.error?.message ?? `HTTP ${res.status}`}`);
+  return body.access_token;
+}
+
+/** Lets this app receive the WABA's webhooks. */
+export async function subscribeAppToWaba(wabaId: string, token: string) {
+  await graphFetch(`${encodeURIComponent(wabaId)}/subscribed_apps`, { method: "POST" }, 1, token);
+}
+
+/**
+ * Asks the WhatsApp Business app to share contacts or chat history (coexistence).
+ * Each kind can be requested only once, within 24 hours of onboarding.
+ */
+export async function requestAppSync(phoneNumberId: string, syncType: "smb_app_state_sync" | "history", token: string): Promise<string | null> {
+  const res = await graphFetch(`${phoneNumberId}/smb_app_data`, { method: "POST", json: { messaging_product: "whatsapp", sync_type: syncType } }, 1, token);
+  return typeof res.request_id === "string" ? res.request_id : null;
 }

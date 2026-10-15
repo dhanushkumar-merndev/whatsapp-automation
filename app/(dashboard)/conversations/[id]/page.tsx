@@ -89,7 +89,7 @@ export default async function ConversationPage({ params }: PageProps<"/conversat
   const [{ data: messages }, { data: executions }, { data: leads }] = await Promise.all([
     supabase
       .from("messages")
-      .select("id, direction, type, body, payload, status, processing_status, processing_note, created_at, sent_by, error, wa_message_id")
+      .select("id, direction, type, body, payload, status, processing_status, processing_note, created_at, sent_by, error, wa_message_id, source")
       .eq("conversation_id", id)
       .order("created_at", { ascending: true })
       .limit(300),
@@ -151,7 +151,8 @@ export default async function ConversationPage({ params }: PageProps<"/conversat
                       </div>
                       <div className={cn("mt-0.5 px-2 text-[10px] text-muted-foreground", m.direction === "outbound" && "text-right")}>
                         {fmtDate(m.created_at, "d MMM, HH:mm")}
-                        {m.direction === "outbound" && ` · ${m.sent_by ? "team" : "bot"} · ${m.status}`}
+                        {m.direction === "outbound" &&
+                          ` · ${m.source === "business_app" ? "you, from the phone app" : m.source === "history" ? "earlier chat" : m.sent_by ? "team" : "bot"} · ${m.status}`}
                         {m.direction === "inbound" && m.processing_note && ` · ${m.processing_note.replace(/_/g, " ")}`}
                       </div>
                     </div>

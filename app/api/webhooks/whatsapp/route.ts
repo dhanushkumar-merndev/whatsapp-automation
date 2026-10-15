@@ -3,7 +3,8 @@ import { timingSafeEqual } from "node:crypto";
 import { serverEnv } from "@/lib/env";
 import { verifyMetaSignature } from "@/lib/whatsapp/signature";
 import { ingestWebhook } from "@/lib/core/webhook-ingest";
-import { processConversation, type PipelineDeps } from "@/lib/core/process-conversation";
+import type { PipelineDeps } from "@/lib/core/process-conversation";
+import { processIngested } from "@/lib/core/conversation-control";
 import { createPipelineDeps, createSender, createStore } from "@/lib/server/pipeline";
 import { createLogger } from "@/lib/server/logger";
 
@@ -94,13 +95,9 @@ export async function POST(req: NextRequest) {
         markRead: sender.markRead?.bind(sender),
       },
     };
-    for (const id of result.conversations) {
-      try {
-        await processConversation(deps, id);
-      } catch (e) {
-        log.error("conversation processing failed", { conversationId: id, error: e instanceof Error ? e.message : String(e) });
-      }
-    }
+    await processIngested(deps, result, (conversationId, e) =>
+      log.error("conversation processing failed", { conversationId, error: e instanceof Error ? e.message : String(e) }),
+    );
     await typing;
     await store.flush();
   });
