@@ -35,6 +35,7 @@ import {
   Plus,
   Redo2,
   Rocket,
+  Save,
   SlidersHorizontal,
   Trash2,
   Undo2,
@@ -120,6 +121,8 @@ const STATUS_TOAST = {
 const edgeTypes = { [EDGE_TYPE]: InsertEdge };
 /** Autosave waits this long after the last change (drafts are rate limited per minute). */
 const AUTOSAVE_MS = 2000;
+/** Per-browser choice: save automatically, or only with Save / Ctrl+S. */
+const AUTOSAVE_KEY = "sgh:autosave";
 
 type PanelTab = "edit" | "issues" | "test";
 
@@ -230,12 +233,28 @@ function EditorInner({ flow, versions, media, crm, settings }: FlowEditorProps) 
     }
   }, [flow.id]);
 
+  const [autoSave, setAutoSave] = useState(() => {
+    try {
+      return localStorage.getItem(AUTOSAVE_KEY) !== "off";
+    } catch {
+      return true;
+    }
+  });
+  const toggleAutoSave = () => {
+    const next = !autoSave;
+    setAutoSave(next);
+    try {
+      localStorage.setItem(AUTOSAVE_KEY, next ? "on" : "off");
+    } catch {}
+    toast.success(next ? "Auto-save on: changes save a moment after you make them" : "Auto-save off: press Save (or Ctrl/⌘ S) to save");
+  };
+
   useEffect(() => {
     // After a failed save, wait for the user to retry instead of hammering the server.
-    if (!dirty || saveError) return;
+    if (!autoSave || !dirty || saveError) return;
     const t = setTimeout(() => void save(), AUTOSAVE_MS);
     return () => clearTimeout(t);
-  }, [fullKey, dirty, saveError, save]);
+  }, [fullKey, dirty, saveError, save, autoSave]);
 
   useEffect(() => {
     if (!saveError) return;
@@ -643,13 +662,25 @@ function EditorInner({ flow, versions, media, crm, settings }: FlowEditorProps) 
     <button type="button" onClick={() => setSaveError(null)} className="inline-flex items-center gap-1 text-xs text-destructive hover:underline">
       <AlertCircle className="size-3.5" /> Not saved · Retry
     </button>
-  ) : saving || dirty ? (
+  ) : saving || (dirty && autoSave) ? (
     <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
       <Loader2 className="size-3.5 animate-spin" /> Saving…
     </span>
+  ) : dirty ? (
+    <Button
+      size="xs"
+      variant="outline"
+      onClick={() => {
+        setSaveError(null);
+        void save().then((ok) => ok && toast.success("Saved", { id: "flow-saved", duration: 1200 }));
+      }}
+      title="Save the draft (Ctrl/⌘ S)"
+    >
+      <Save /> Save
+    </Button>
   ) : (
-    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-      <Check className="size-3.5" /> Saved
+    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" title={autoSave ? "Changes save automatically. Publish to make them live." : "Draft saved. Publish to make it live."}>
+      <Check className="size-3.5" /> {autoSave ? "Auto-saved" : "Saved"}
     </span>
   );
 
@@ -779,6 +810,10 @@ function EditorInner({ flow, versions, media, crm, settings }: FlowEditorProps) 
             <DropdownMenuContent align="end" className="w-60">
               <DropdownMenuItem onSelect={runLayout}>
                 <Wand2 /> Tidy up layout
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={toggleAutoSave}>
+                <Save /> Auto-save: {autoSave ? "On" : "Off"}
+                {autoSave && <Check className="ml-auto" />}
               </DropdownMenuItem>
               <DropdownMenuItem
                 onSelect={async () => {
