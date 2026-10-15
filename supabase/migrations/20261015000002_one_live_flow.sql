@@ -4,10 +4,15 @@
 -- conversations already running on it may finish (see process-conversation).
 -- =============================================================================
 
--- Keep the most recently published live / test workflow; pause any others.
+-- Keep the live / test workflow customers are in the middle of (then the most
+-- recently published one); pause any others.
 with ranked as (
   select f.id, f.status,
-         row_number() over (partition by f.status order by v.created_at desc nulls last, f.updated_at desc) as rn
+         row_number() over (
+           partition by f.status
+           order by (select count(*) from public.flow_executions e
+                      where e.flow_id = f.id and e.status in ('running', 'waiting_input', 'waiting_delay')) desc,
+                    v.created_at desc nulls last, f.updated_at desc) as rn
     from public.flows f
     left join public.flow_versions v on v.id = f.published_version_id
    where f.status in ('active', 'testing')
