@@ -28,6 +28,7 @@ export const NODE_DOCS: Record<NodeType, NodeDoc> = {
     config: [
       `text (string, required, max 4096) — supports placeholders.`,
       `cooldownHours (integer, default 0) — skip if this step already messaged the same customer within this many hours.`,
+      `buttonText (string, max 20) + buttonUrl (https link, placeholders allowed) — optional link button under the message (text must be ≤ 1024 chars).`,
     ],
   },
   send_media: {
@@ -103,6 +104,41 @@ export const NODE_DOCS: Record<NodeType, NodeDoc> = {
     ],
     notes: ["Only use templates the business told you exist; otherwise prefer send_message."],
   },
+  send_location: {
+    purpose: "Send a map pin (shop, office, venue).",
+    config: [`latitude, longitude (numbers, required).`, `name, address (strings, optional).`],
+  },
+  whatsapp_form: {
+    purpose: "Open a WhatsApp Form (Meta Flow) the business built in WhatsApp Manager — for long forms with dropdowns, checkboxes, date pickers. Waits until it is submitted.",
+    config: [
+      `flowId (string of digits, required) — from WhatsApp Manager → Flows. Only use if the business gave you one.`,
+      `screen (string, required) — the form's first screen id, e.g. "QUESTION_ONE".`,
+      `cta (string, max 20, default "Open form"), body (string), header, footer (optional), draft (boolean, default false — true while testing an unpublished form).`,
+      `variable (default "form") — answers by field name: {{vars.form.<field_name>}}; {{vars.form}} lists them all.`,
+    ],
+  },
+  notify_team: {
+    purpose: "Alert the business team (dashboard + Telegram) with a custom message; the workflow continues.",
+    config: [`title (string), message (string; placeholders allowed).`],
+  },
+  set_variable: {
+    purpose: "Store a value for later steps.",
+    config: [`variable (string, required), value (string; placeholders allowed).`],
+  },
+  add_tag: {
+    purpose: "Add or remove tags on the customer (e.g. \"hot lead\", \"website\"). Tags show in the dashboard; {{contact.tags}} lists them.",
+    config: [`tags (string[], 1–10, letters/numbers/spaces).`, `action ("add" | "remove", default "add").`],
+  },
+  api_request: {
+    purpose: "Call another system's API and save the JSON reply. Outputs “success” (2xx) or “error”.",
+    config: [
+      `method ("GET" | "POST", default "POST"), url (public https URL; placeholders are URL-encoded).`,
+      `headers (array of { name, value }), body (JSON text for POST; placeholders are JSON-escaped).`,
+      `variable (default "api") — reply fields: {{vars.api.<field>}}; {{vars.api.status}} is the HTTP status.`,
+      `timeoutSeconds (1–15, default 8).`,
+    ],
+    notes: ["Only add this if the business gave you the API details."],
+  },
   validation: {
     purpose: "Advanced: extra checks (length, regex, allowed options) on the answer to the question right before it. Invalid → re-asks with errorMessage; after maxAttempts → output “invalid”.",
     config: [
@@ -120,7 +156,7 @@ export const NODE_DOCS: Record<NodeType, NodeDoc> = {
     purpose: "Branch: output “true” or “false”.",
     config: [
       `left (string) — usually a placeholder, e.g. "{{vars.service.id}}" or "{{contact.name}}".`,
-      `operator — one of: equals, not_equals, contains, not_contains, is_set, is_not_set, matches_regex, customer_is_new, customer_is_returning, option_selected (left = "{{vars.x.id}}", right = option id), has_open_enquiry (right = optional number of days).`,
+      `operator — one of: equals, not_equals, contains, not_contains, is_set, is_not_set, matches_regex, customer_is_new, customer_is_returning, option_selected (left = "{{vars.x.id}}", right = option id), has_open_enquiry (right = optional number of days), within_business_hours (true while the business is open, per Settings).`,
       `right (string) — value to compare with.`,
       `caseSensitive (boolean, default false).`,
     ],

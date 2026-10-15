@@ -36,8 +36,19 @@ export function extractInbound(m: Json): { type: string; body: string | null; pa
       break;
     case "interactive": {
       const i = obj(m.interactive);
-      const reply = obj(i.button_reply ?? i.list_reply ?? i.nfm_reply);
       payload.interactive_type = str(i.type);
+      if (i.nfm_reply) {
+        // A submitted WhatsApp Form: its answers arrive as a JSON string.
+        const nfm = obj(i.nfm_reply);
+        try {
+          payload.form_response = obj(JSON.parse(str(nfm.response_json) ?? "{}"));
+        } catch {
+          payload.form_response = {};
+        }
+        body = str(nfm.body) ?? "[form submitted]";
+        break;
+      }
+      const reply = obj(i.button_reply ?? i.list_reply);
       payload.reply_id = str(reply.id);
       payload.reply_title = str(reply.title);
       body = str(reply.title);

@@ -214,6 +214,7 @@ function toTurnState(r: Row | null): TurnState | null {
       cooldownUntil: (c.cooldown_until as string) ?? null,
       isTest: Boolean(c.is_test),
       openEnquiryAt: (c.open_enquiry_at as string) ?? null,
+      tags: (c.tags as string[]) ?? [],
     },
     active: active ? toExecution(active) : null,
     activeFlowStatus: active ? ((active.flow_status as FlowStatus) ?? null) : null,
@@ -402,7 +403,7 @@ export class SupabaseStore implements AppStore {
       await this.db
         .from("conversations")
         .select(
-          "id, contact_id, account_id, status, last_inbound_at, is_test, whatsapp_accounts(phone_number_id), contacts(id, wa_id, name, profile_name, business_name, email, opted_out, cooldown_until, is_test, leads(created_at))",
+          "id, contact_id, account_id, status, last_inbound_at, is_test, whatsapp_accounts(phone_number_id), contacts(id, wa_id, name, profile_name, business_name, email, opted_out, cooldown_until, is_test, tags, leads(created_at))",
         )
         .eq("id", conversationId)
         .in("contacts.leads.status", [...OPEN_LEAD_STATUSES])
@@ -435,6 +436,7 @@ export class SupabaseStore implements AppStore {
       cooldownUntil: (c.cooldown_until as string) ?? null,
       isTest: Boolean(c.is_test),
       openEnquiryAt: openLead?.created_at ?? null,
+      tags: (c.tags as string[]) ?? [],
     };
     return { conversation, contact };
   }
@@ -860,6 +862,14 @@ export class SupabaseStore implements AppStore {
       isTest: Boolean(r.is_test),
       reminder: (r.reminder as BookingRecord["reminder"]) ?? null,
     };
+  }
+
+  async updateContactTags(contactId: string, change: { add: string[]; remove: string[] }) {
+    const r = check(
+      await this.db.rpc("update_contact_tags", { p_contact_id: contactId, p_add: change.add, p_remove: change.remove }),
+      "update tags",
+    );
+    return (r as string[] | null) ?? [];
   }
 
   async cancelScheduledJob(jobId: string) {

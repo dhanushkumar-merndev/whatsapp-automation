@@ -15,8 +15,9 @@ export interface SafeResponse {
  */
 export function safeRequest(
   url: URL,
-  init: { method: "POST"; headers: Record<string, string>; body: string; timeoutMs: number; policy: UrlPolicy },
+  init: { method: "GET" | "POST"; headers: Record<string, string>; body?: string; timeoutMs: number; policy: UrlPolicy; maxBytes?: number },
 ): Promise<SafeResponse> {
+  const maxBytes = init.maxBytes ?? 8192;
   const lookup: LookupFunction = (hostname, options, callback) => {
     dnsLookup(hostname, { ...options, all: false }, (err, address, family) => {
       if (err) return callback(err, "", 0);
@@ -34,7 +35,7 @@ export function safeRequest(
       url,
       {
         method: init.method,
-        headers: { ...init.headers, "Content-Length": Buffer.byteLength(init.body).toString() },
+        headers: { ...init.headers, ...(init.body !== undefined ? { "Content-Length": Buffer.byteLength(init.body).toString() } : {}) },
         lookup,
         timeout: init.timeoutMs,
       },
@@ -43,9 +44,9 @@ export function safeRequest(
         let size = 0;
         res.on("data", (c: Buffer) => {
           size += c.length;
-          if (size <= 8192) chunks.push(c);
+          if (size <= maxBytes) chunks.push(c);
         });
-        res.on("end", () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString("utf8").slice(0, 2000) }));
+        res.on("end", () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString("utf8").slice(0, maxBytes === 8192 ? 2000 : maxBytes) }));
         res.on("error", reject);
       },
     );

@@ -6,6 +6,9 @@ import { z } from "zod";
  */
 
 const keywordList = z.array(z.string().trim().min(1).max(40)).max(20);
+const clock = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$|^24:00$/, "Use HH:MM");
+const dayHours = (open: boolean) =>
+  z.object({ open: z.boolean().default(open), from: clock.default("10:00"), to: clock.default("19:00") }).prefault({});
 
 export const appSettingsSchema = z.object({
   keywords: z
@@ -37,6 +40,7 @@ export const appSettingsSchema = z.object({
           handoffMessages: z.boolean().default(true),
           leads: z.boolean().default(true),
           bookings: z.boolean().default(true),
+          flowAlerts: z.boolean().default(true),
           problems: z.boolean().default(true),
         })
         .prefault({}),
@@ -46,6 +50,18 @@ export const appSettingsSchema = z.object({
     .object({
       /** Used for dates in answers, bookings and business hours. */
       timezone: z.string().max(60).default("Asia/Kolkata"),
+      /** Opening hours per weekday, for the "within business hours" condition. */
+      hours: z
+        .object({
+          sun: dayHours(false),
+          mon: dayHours(true),
+          tue: dayHours(true),
+          wed: dayHours(true),
+          thu: dayHours(true),
+          fri: dayHours(true),
+          sat: dayHours(true),
+        })
+        .prefault({}),
     })
     .prefault({}),
   /** E.164 digits without "+" — conversations from these numbers are marked as tests. */

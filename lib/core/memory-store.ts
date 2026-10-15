@@ -224,6 +224,7 @@ export class MemoryStore implements AppStore {
         optedOut: false,
         cooldownUntil: null,
         isTest: input.isTest,
+        tags: [],
         createdAt: this.iso(),
       };
       this.contacts.set(contact.id, contact);
@@ -698,6 +699,13 @@ export class MemoryStore implements AppStore {
   async getBooking(id: string) {
     const b = this.bookings.get(id);
     return b ? clone(b) : null;
+  }
+
+  async updateContactTags(contactId: string, change: { add: string[]; remove: string[] }) {
+    const c = this.contacts.get(contactId);
+    if (!c) return [];
+    c.tags = [...new Set([...c.tags, ...change.add])].filter((t) => !change.remove.includes(t)).sort();
+    return [...c.tags];
   }
 
   async cancelScheduledJob(jobId: string) {

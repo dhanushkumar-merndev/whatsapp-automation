@@ -34,17 +34,28 @@ export const BUILTIN_VARIABLES: FlowVariable[] = [
   { path: "vars.last_message", label: "Latest message", group: "Messages" },
 ];
 
-/** Answers stored by Ask question / Interactive nodes, in flow order. Tolerates half-edited configs. */
+/** Steps that store something in {{vars.<variable>}}, with a fallback label. */
+const STORED_BY: Partial<Record<FlowDefinition["nodes"][number]["type"], string>> = {
+  ask_question: "Answer",
+  interactive: "Choice",
+  booking: "Booked day and time",
+  whatsapp_form: "Form answers",
+  set_variable: "Saved value",
+  api_request: "API reply",
+};
+
+/** Values stored by questions and other steps, in flow order. Tolerates half-edited configs. */
 export function listAnswerVariables(def: Pick<FlowDefinition, "nodes">): FlowVariable[] {
   const out: FlowVariable[] = [];
   const seen = new Set<string>();
   for (const n of def.nodes) {
-    if (n.type !== "ask_question" && n.type !== "interactive" && n.type !== "booking") continue;
+    const label = STORED_BY[n.type];
+    if (!label) continue;
     const c = n.data.config as Record<string, unknown>;
-    const name = typeof c.variable === "string" ? c.variable.trim() : n.type === "booking" ? "booking" : "";
+    const name = typeof c.variable === "string" ? c.variable.trim() : "";
     if (!VARIABLE_NAME.test(name) || seen.has(name)) continue;
     seen.add(name);
-    const prompt = n.type === "ask_question" ? c.question : n.type === "booking" ? "Booked day and time" : c.body;
+    const prompt = n.type === "ask_question" ? c.question : n.type === "interactive" ? c.body : label;
     const options = n.type === "interactive" && Array.isArray(c.options) ? (c.options as InteractiveOption[]) : undefined;
     out.push({
       path: `vars.${name}`,

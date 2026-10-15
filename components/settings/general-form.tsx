@@ -44,8 +44,60 @@ const TELEGRAM_EVENTS: { key: keyof AppSettings["telegram"]["events"]; label: st
   { key: "handoffMessages", label: "Customer replies to your team", help: "Every message from a customer whose chat is with your team." },
   { key: "leads", label: "New leads", help: "Name, phone, service, business and requirements when an enquiry is submitted." },
   { key: "bookings", label: "New bookings", help: "Who booked, for what, and when." },
+  { key: "flowAlerts", label: "Workflow alerts", help: "Sent by “Notify team” steps in your workflow." },
   { key: "problems", label: "Problems", help: "CRM delivery failed, 24-hour window closed, automation errors, missing media." },
 ];
+
+const WEEK: { key: keyof AppSettings["business"]["hours"]; label: string }[] = [
+  { key: "mon", label: "Monday" },
+  { key: "tue", label: "Tuesday" },
+  { key: "wed", label: "Wednesday" },
+  { key: "thu", label: "Thursday" },
+  { key: "fri", label: "Friday" },
+  { key: "sat", label: "Saturday" },
+  { key: "sun", label: "Sunday" },
+];
+
+/** Timezone (dates, bookings) and opening hours (the "We are open now" condition). */
+function BusinessCard({ s, setS }: { s: AppSettings; setS: (next: AppSettings) => void }) {
+  const b = s.business;
+  const setDay = (key: keyof AppSettings["business"]["hours"], patch: Partial<AppSettings["business"]["hours"]["mon"]>) =>
+    setS({ ...s, business: { ...b, hours: { ...b.hours, [key]: { ...b.hours[key], ...patch } } } });
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">Business hours</CardTitle>
+        <CardDescription>Used by the “We are open now” condition, and the timezone for dates and bookings.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="max-w-xs space-y-1">
+          <Label className="text-xs">Timezone</Label>
+          <Input value={b.timezone} onChange={(e) => setS({ ...s, business: { ...b, timezone: e.target.value.trim() } })} placeholder="Asia/Kolkata" />
+        </div>
+        <div className="divide-y rounded-2xl border">
+          {WEEK.map(({ key, label }) => {
+            const d = b.hours[key];
+            return (
+              <div key={key} className="flex flex-wrap items-center gap-3 px-4 py-2.5">
+                <span className="w-24 text-sm">{label}</span>
+                <Switch checked={d.open} onCheckedChange={(v) => setDay(key, { open: v })} aria-label={`${label} open`} />
+                {d.open ? (
+                  <span className="flex items-center gap-2 text-sm">
+                    <Input type="time" value={d.from} onChange={(e) => setDay(key, { from: e.target.value })} className="h-8 w-28" />
+                    to
+                    <Input type="time" value={d.to} onChange={(e) => setDay(key, { to: e.target.value })} className="h-8 w-28" />
+                  </span>
+                ) : (
+                  <span className="text-sm text-muted-foreground">Closed</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 function TelegramCard({ s, setS, tokenSet }: { s: AppSettings; setS: (next: AppSettings) => void; tokenSet: boolean }) {
   const [chats, setChats] = useState(s.telegram.chatIds.join("\n"));
@@ -150,6 +202,7 @@ export function GeneralSettingsForm({ initial, telegramTokenSet }: { initial: Ap
         rateLimits: s.rateLimits,
         retention: s.retention,
         telegram: s.telegram,
+        business: s.business,
       });
       if (r.ok) {
         setSaved(current);
@@ -192,6 +245,8 @@ export function GeneralSettingsForm({ initial, telegramTokenSet }: { initial: Ap
           </div>
         </CardContent>
       </Card>
+
+      <BusinessCard s={s} setS={setS} />
 
       <TelegramCard s={s} setS={setS} tokenSet={telegramTokenSet} />
 

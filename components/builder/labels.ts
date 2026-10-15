@@ -23,10 +23,11 @@ export const OPERATOR_LABELS: Record<ConditionOperator, string> = {
   customer_is_new: "Customer is new",
   customer_is_returning: "Customer is returning",
   has_open_enquiry: "Customer has an open enquiry",
+  within_business_hours: "We are open now (business hours)",
 };
 
 /** Operators about the customer; they ignore "value to test". */
-export const CUSTOMER_OPERATORS: ConditionOperator[] = ["customer_is_new", "customer_is_returning", "has_open_enquiry"];
+export const CUSTOMER_OPERATORS: ConditionOperator[] = ["customer_is_new", "customer_is_returning", "has_open_enquiry", "within_business_hours"];
 /** Operators that compare against "Compare with". */
 export const VALUE_OPERATORS: ConditionOperator[] = ["equals", "not_equals", "contains", "not_contains", "matches_regex", "option_selected"];
 

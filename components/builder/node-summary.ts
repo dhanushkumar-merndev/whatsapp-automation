@@ -30,8 +30,20 @@ export function nodeSummary(
     }
     case "send_message": {
       const hours = Number(c.cooldownHours) || 0;
-      return `${s(c.text)}${hours > 0 ? ` · not repeated within ${hours}h` : ""}`;
+      return `${s(c.text)}${s(c.buttonText) && s(c.buttonUrl) ? ` · [${s(c.buttonText)}]` : ""}${hours > 0 ? ` · not repeated within ${hours}h` : ""}`;
     }
+    case "send_location":
+      return s(c.name) || s(c.address) || `Pin at ${c.latitude}, ${c.longitude}`;
+    case "whatsapp_form":
+      return s(c.flowId) ? `Form ${s(c.flowId)} · “${s(c.cta)}” → ${s(c.variable) || "form"}` : "No form chosen yet";
+    case "notify_team":
+      return s(c.title);
+    case "set_variable":
+      return `${s(c.variable) || "?"} = ${s(c.value) || "(empty)"}`;
+    case "add_tag":
+      return `${c.action === "remove" ? "Remove" : "Add"} ${((c.tags as string[]) ?? []).map((t) => `#${t}`).join(" ")}`;
+    case "api_request":
+      return `${s(c.method)} ${s(c.url).replace(/^https?:\/\//, "")} → ${s(c.variable) || "api"}`;
     case "send_media":
       return c.assetId ? `File: ${names.mediaNames[s(c.assetId)] ?? "selected file"}` : "No file selected yet";
     case "wait":

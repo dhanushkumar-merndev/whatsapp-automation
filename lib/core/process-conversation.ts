@@ -38,6 +38,7 @@ export function toInboundInput(msg: PendingInbound): InboundInput {
           },
         }
       : {}),
+    ...(p.form_response && typeof p.form_response === "object" ? { form: p.form_response as Record<string, unknown> } : {}),
     ...(msg.type === "location" && loc
       ? {
           location: {

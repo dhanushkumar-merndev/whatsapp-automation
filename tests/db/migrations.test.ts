@@ -329,6 +329,18 @@ describe("bookings", () => {
   });
 });
 
+describe("contact tags", () => {
+  it("adds and removes tags without duplicates, and the turn state includes them", async () => {
+    const conv = await one<{ id: string; contact_id: string }>(`select id, contact_id from public.conversations limit 1`);
+    const tags = async (add: string[], remove: string[]) =>
+      (await one<{ t: string[] }>(`select public.update_contact_tags($1, $2, $3) as t`, [conv.contact_id, add, remove])).t;
+    expect(await tags(["web", "hot lead"], [])).toEqual(["hot lead", "web"]);
+    expect(await tags(["web"], ["hot lead"])).toEqual(["web"]);
+    const state = (await one<{ s: { contact: { tags: string[] } } }>(`select public.conversation_turn_state($1) as s`, [conv.id])).s;
+    expect(state.contact.tags).toEqual(["web"]);
+  });
+});
+
 describe("row level security", () => {
   it("anon cannot read leads or conversations", async () => {
     await expect(asRole(db, "anon", {}, (tx) => tx.query(`select * from public.conversations`))).rejects.toThrow(

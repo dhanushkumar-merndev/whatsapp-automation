@@ -10,6 +10,7 @@ import type { AppStore } from "@/lib/core/types";
 import type { MessageSender } from "@/lib/engine/types";
 import { SupabaseStore, type SupabaseStoreOptions } from "./supabase-store";
 import { createLogger } from "./logger";
+import { createHttpPort } from "./http-port";
 
 export function crmUrlPolicy() {
   return { requireHttps: isProduction(), allowLoopback: !isProduction() };
@@ -48,5 +49,6 @@ export async function createPipelineDeps(
     logger: createLogger(scope),
     mode: "live",
     inlineWait: { sleep: (ms) => new Promise((r) => setTimeout(r, ms)), budgetMs: INLINE_WAIT_BUDGET_MS },
+    http: createHttpPort(crmUrlPolicy()),
   };
 }

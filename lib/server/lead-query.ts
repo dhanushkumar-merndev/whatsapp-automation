@@ -19,6 +19,8 @@ export interface LeadFilters {
   from: string;
   to: string;
   assigned: string;
+  /** Customer tag (from "Tag customer" steps). */
+  tag: string;
   includeTest: boolean;
 }
 
@@ -32,6 +34,7 @@ export function parseLeadFilters(sp: Record<string, string | string[] | undefine
     from: /^\d{4}-\d{2}-\d{2}$/.test(s("from")) ? s("from") : "",
     to: /^\d{4}-\d{2}-\d{2}$/.test(s("to")) ? s("to") : "",
     assigned: s("assigned"),
+    tag: s("tag").slice(0, 40),
     includeTest: s("test") === "1",
   };
 }
@@ -62,8 +65,15 @@ export interface LeadRow {
 export const LEAD_COLUMNS =
   "id, name, phone, business_name, service, service_id, requirements, email, status, crm_sync_status, crm_last_synced_at, assigned_to, notes, is_test, created_at, updated_at, last_activity_at, flow_id, conversation_id, source";
 
+/** Contacts carrying a tag (leads are filtered by these). */
+export async function contactsWithTag(db: SupabaseClient, tag: string): Promise<string[]> {
+  const { data } = await db.from("contacts").select("id").contains("tags", [tag]).limit(1000);
+  return (data ?? []).map((r) => r.id as string);
+}
+
+/** `tagged`: contact ids for `f.tag` (see contactsWithTag). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function applyLeadFilters(q: any, f: LeadFilters) {
+export function applyLeadFilters(q: any, f: LeadFilters, tagged?: string[]) {
   if (!f.includeTest) q = q.eq("is_test", false);
   switch (f.view) {
     case "new":
@@ -94,11 +104,13 @@ export function applyLeadFilters(q: any, f: LeadFilters) {
   if (f.to) q = q.lte("created_at", `${f.to}T23:59:59Z`);
   if (f.assigned === "me" || /^[0-9a-f-]{36}$/.test(f.assigned)) q = q.eq("assigned_to", f.assigned);
   if (f.assigned === "unassigned") q = q.is("assigned_to", null);
+  if (f.tag && tagged) q = q.in("contact_id", tagged.length ? tagged : ["00000000-0000-0000-0000-000000000000"]);
   return q;
 }
 
 export async function fetchLeads(db: SupabaseClient, f: LeadFilters, range: { from: number; to: number }) {
-  const res = await applyLeadFilters(db.from("leads").select(LEAD_COLUMNS, { count: "exact" }), f)
+  const tagged = f.tag ? await contactsWithTag(db, f.tag) : undefined;
+  const res = await applyLeadFilters(db.from("leads").select(LEAD_COLUMNS, { count: "exact" }), f, tagged)
     .order("created_at", { ascending: false })
     .range(range.from, range.to);
   return { data: (res.data ?? null) as LeadRow[] | null, count: (res.count ?? 0) as number, error: res.error as { message: string } | null };

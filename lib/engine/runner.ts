@@ -13,7 +13,8 @@ import {
   type BookingState,
 } from "./booking";
 import { parseNodeConfig, waitSeconds, type BookingConfig, type ConditionConfig, type FlowNode, type LeadField } from "./schema";
-import { renderTemplate, stringify, templateVariables, lookup, type TemplateScope } from "./template";
+import { jsonEscape, renderTemplate, stringify, templateVariables, lookup, type TemplateScope } from "./template";
+import { isWithinBusinessHours } from "./business-hours";
 import { isOptionAnswer, validateAnswer } from "./validate-answer";
 import { isWindowOpen } from "./window";
 import { attemptCrmDelivery } from "./crm-attempt";
@@ -163,6 +164,31 @@ export async function resumeWithInput(
 
   if (question.type === "booking") {
     await handleBookingReply(ctx, question, args.input);
+    return ctx.exec;
+  }
+
+  if (question.type === "whatsapp_form") {
+    const cfg = parseNodeConfig("whatsapp_form", question.data.config);
+    if (!args.input.form) {
+      // Anything but a form submission: point them back to the form.
+      const since = deps.now().toISOString();
+      const nudges = (exec.context.attempts[question.id] ?? 0) + 1;
+      exec.context.attempts[question.id] = nudges;
+      await sendOutbound(ctx, question, { kind: "text", text: `Please tap “${cfg.cta}” above to fill in the form 🙂` }, `nudge${nudges}`);
+      await waitForAnswer(ctx, question.id, question.id, since);
+      exec.lastActivityAt = deps.now().toISOString();
+      await deps.store.saveExecution(exec);
+      return ctx.exec;
+    }
+    const { flow_token: _token, ...fields } = args.input.form;
+    exec.context.vars[cfg.variable] = {
+      ...fields,
+      title: Object.entries(fields)
+        .map(([k, v]) => `${k.replace(/_/g, " ")}: ${Array.isArray(v) ? v.join(", ") : String(v)}`)
+        .join("\n"),
+    };
+    exec.context.attempts[question.id] = 0;
+    await run(ctx, graph.next(question.id, "out"));
     return ctx.exec;
   }
 
@@ -431,6 +457,7 @@ function scope(ctx: RunContext): TemplateScope {
       email: ctx.contact.email,
       is_new: ctx.exec.context.isNewCustomer,
       has_open_enquiry: ctx.contact.openEnquiryAt !== null,
+      tags: ctx.contact.tags.join(", "),
     },
     vars: ctx.exec.context.vars,
     lead: { id: ctx.exec.context.leadId },
@@ -450,6 +477,12 @@ function preview(message: OutboundMessage): string {
       return `${message.body}\n${message.rows.map((r, i) => `${i + 1}. ${r.title}`).join("\n")}`;
     case "template":
       return `[template ${message.name}]${message.bodyParams.length ? ` ${message.bodyParams.join(" · ")}` : ""}`;
+    case "cta_url":
+      return `${message.body}\n[${message.buttonText}] ${message.url}`;
+    case "location":
+      return `[location] ${[message.name, message.address].filter(Boolean).join(", ") || `${message.latitude},${message.longitude}`}`;
+    case "flow":
+      return `${message.body}\n[${message.cta}]`;
   }
 }
 
@@ -682,8 +715,15 @@ async function executeNode(ctx: RunContext, node: FlowNode): Promise<NodeResult>
           return { type: "next", handle: "out", status: "skipped", detail: { reason: "cooldown", cooldownHours: cfg.cooldownHours } };
         }
       }
-      const text = renderTemplate(cfg.text, scope(ctx));
-      const outcome = await sendOutbound(ctx, node, { kind: "text", text });
+      const s = scope(ctx);
+      const text = renderTemplate(cfg.text, s);
+      const url = cfg.buttonText && cfg.buttonUrl ? renderTemplate(cfg.buttonUrl, s, encodeURIComponent).trim() : "";
+      const button = /^https?:\/\/\S+$/i.test(url) && text.length <= 1024;
+      const outcome = await sendOutbound(
+        ctx,
+        node,
+        button ? { kind: "cta_url", body: text, buttonText: cfg.buttonText, url } : { kind: "text", text: url ? `${text}\n\n${url}` : text },
+      );
       if (outcome === "window_closed") return windowStop();
       return { type: "next", handle: "out", detail: { outcome } };
     }
@@ -799,6 +839,99 @@ async function executeNode(ctx: RunContext, node: FlowNode): Promise<NodeResult>
         bodyParams: cfg.bodyParams.map((p) => renderTemplate(p, s).trim() || "-"),
       });
       return { type: "next", handle: "out", detail: { outcome, template: cfg.name } };
+    }
+
+    case "send_location": {
+      const cfg = parseNodeConfig("send_location", node.data.config);
+      const s = scope(ctx);
+      const outcome = await sendOutbound(ctx, node, {
+        kind: "location",
+        latitude: cfg.latitude,
+        longitude: cfg.longitude,
+        name: renderTemplate(cfg.name, s) || undefined,
+        address: renderTemplate(cfg.address, s) || undefined,
+      });
+      if (outcome === "window_closed") return windowStop();
+      return { type: "next", handle: "out", detail: { outcome } };
+    }
+
+    case "whatsapp_form": {
+      const cfg = parseNodeConfig("whatsapp_form", node.data.config);
+      const s = scope(ctx);
+      const since = deps.now().toISOString();
+      const outcome = await sendOutbound(ctx, node, {
+        kind: "flow",
+        body: renderTemplate(cfg.body, s),
+        header: renderTemplate(cfg.header, s) || undefined,
+        footer: renderTemplate(cfg.footer, s) || undefined,
+        flowId: cfg.flowId,
+        cta: cfg.cta,
+        screen: cfg.screen,
+        flowToken: `${exec.id}:${node.id}`,
+        draft: cfg.draft,
+      });
+      if (outcome === "window_closed") return windowStop();
+      exec.context.lastQuestionNodeId = node.id;
+      await waitForAnswer(ctx, node.id, node.id, since);
+      return { type: "wait", detail: { outcome, flowId: cfg.flowId } };
+    }
+
+    case "notify_team": {
+      const cfg = parseNodeConfig("notify_team", node.data.config);
+      const s = scope(ctx);
+      await deps.store.notify({
+        kind: "team_alert",
+        severity: "info",
+        title: `${exec.isTest ? "[Test] " : ""}${renderTemplate(cfg.title, s)}`,
+        body: renderTemplate(cfg.message, s),
+        link: `/conversations/${ctx.conversation.id}`,
+        entityType: "conversation",
+        entityId: ctx.conversation.id,
+      });
+      return { type: "next", handle: "out" };
+    }
+
+    case "set_variable": {
+      const cfg = parseNodeConfig("set_variable", node.data.config);
+      const value = renderTemplate(cfg.value, scope(ctx));
+      exec.context.vars[cfg.variable] = value;
+      return { type: "next", handle: "out", detail: { variable: cfg.variable, value: value.slice(0, 120) } };
+    }
+
+    case "add_tag": {
+      const cfg = parseNodeConfig("add_tag", node.data.config);
+      const change = cfg.action === "add" ? { add: cfg.tags, remove: [] } : { add: [], remove: cfg.tags };
+      ctx.contact.tags = await deps.store.updateContactTags(ctx.contact.id, change);
+      return { type: "next", handle: "out", detail: { ...change, tags: ctx.contact.tags } };
+    }
+
+    case "api_request": {
+      const cfg = parseNodeConfig("api_request", node.data.config);
+      const s = scope(ctx);
+      if (!deps.http) {
+        // Simulation and tests without a network: carry on as if it answered with nothing.
+        exec.context.vars[cfg.variable] = { status: 0 };
+        return { type: "next", handle: "success", status: "skipped", detail: { reason: "no_network_in_simulation" } };
+      }
+      const url = renderTemplate(cfg.url, s, encodeURIComponent).trim();
+      const headers = Object.fromEntries(cfg.headers.map((h) => [h.name, renderTemplate(h.value, s)]));
+      const body = cfg.method === "POST" ? renderTemplate(cfg.body, s, jsonEscape) : undefined;
+      if (body && !Object.keys(headers).some((h) => h.toLowerCase() === "content-type")) headers["Content-Type"] = "application/json";
+      try {
+        const res = await deps.http.request({ method: cfg.method, url, headers, body, timeoutMs: cfg.timeoutSeconds * 1000 });
+        let data: unknown = res.body;
+        try {
+          data = res.body ? JSON.parse(res.body) : null;
+        } catch {}
+        const value = data && typeof data === "object" && !Array.isArray(data) ? { ...(data as Record<string, unknown>) } : { items: data };
+        exec.context.vars[cfg.variable] = { ...value, status: res.status };
+        const ok = res.status >= 200 && res.status < 300;
+        return { type: "next", handle: ok ? "success" : "error", status: ok ? "success" : "failed", detail: { status: res.status } };
+      } catch (e) {
+        const error = e instanceof Error ? e.message : String(e);
+        exec.context.vars[cfg.variable] = { status: 0, error };
+        return { type: "next", handle: "error", status: "failed", detail: { error: error.slice(0, 300) } };
+      }
     }
 
     case "booking": {
@@ -984,6 +1117,8 @@ function evaluateCondition(ctx: RunContext, cfg: ConditionConfig): boolean {
       return ctx.exec.context.isNewCustomer;
     case "customer_is_returning":
       return !ctx.exec.context.isNewCustomer;
+    case "within_business_hours":
+      return isWithinBusinessHours(ctx.deps.settings.business, ctx.deps.now());
     case "has_open_enquiry": {
       // "Compare with" holds an optional look-back in days; blank means any open enquiry counts.
       if (!ctx.contact.openEnquiryAt) return false;

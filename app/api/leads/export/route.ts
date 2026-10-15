@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { AuthzError, audit, requireAdmin } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
-import { applyLeadFilters, LEAD_COLUMNS, parseLeadFilters } from "@/lib/server/lead-query";
+import { applyLeadFilters, contactsWithTag, LEAD_COLUMNS, parseLeadFilters } from "@/lib/server/lead-query";
 import { csvCell } from "@/lib/csv";
 
 export const runtime = "nodejs";
@@ -34,7 +34,8 @@ export async function GET(req: NextRequest) {
   const filters = parseLeadFilters(Object.fromEntries(req.nextUrl.searchParams));
   if (filters.assigned === "me") filters.assigned = session.userId;
   const supabase = await createClient();
-  const { data, error } = await applyLeadFilters(supabase.from("leads").select(LEAD_COLUMNS), filters)
+  const tagged = filters.tag ? await contactsWithTag(supabase, filters.tag) : undefined;
+  const { data, error } = await applyLeadFilters(supabase.from("leads").select(LEAD_COLUMNS), filters, tagged)
     .order("created_at", { ascending: false })
     .limit(10000);
   if (error) return Response.json({ error: error.message }, { status: 500 });

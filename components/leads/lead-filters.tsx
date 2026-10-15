@@ -8,9 +8,9 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SearchInput } from "@/components/common/search-input";
 
-const FILTER_KEYS = ["q", "service", "assigned", "from", "to", "test"];
+const FILTER_KEYS = ["q", "service", "assigned", "tag", "from", "to", "test"];
 
-export function LeadFilters({ services, staff }: { services: string[]; staff: { id: string; name: string }[] }) {
+export function LeadFilters({ services, staff, tags }: { services: string[]; staff: { id: string; name: string }[]; tags: string[] }) {
   const router = useRouter();
   const sp = useSearchParams();
   const set = (patch: Record<string, string>) => {
@@ -55,6 +55,21 @@ export function LeadFilters({ services, staff }: { services: string[]; staff: { 
           ))}
         </SelectContent>
       </Select>
+      {tags.length > 0 && (
+        <Select value={sp.get("tag") || "__all"} onValueChange={(v) => set({ tag: v === "__all" ? "" : v })}>
+          <SelectTrigger size="sm" className="w-40 rounded-full">
+            <SelectValue placeholder="Any tag" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all">Any tag</SelectItem>
+            {tags.map((t) => (
+              <SelectItem key={t} value={t}>
+                #{t}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
       <div className="flex items-center gap-1.5 rounded-full border border-input py-0.5 pr-1 pl-3.5 text-xs text-muted-foreground">
         <span>From</span>
         <Input

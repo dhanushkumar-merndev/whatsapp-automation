@@ -30,6 +30,8 @@ export interface InboundInput {
   /** Photo, file, video, voice note or sticker. */
   media?: { type: string; mediaId: string | null; mimeType: string | null; filename: string | null; caption: string | null };
   location?: { latitude: number; longitude: number; name: string | null; address: string | null };
+  /** Answers from a WhatsApp Form (Meta Flow) submission. */
+  form?: Record<string, unknown>;
 }
 
 export type OutboundMessage =
@@ -50,6 +52,9 @@ export type OutboundMessage =
       buttonText: string;
       rows: { id: string; title: string; description?: string }[];
     }
+  | { kind: "cta_url"; body: string; buttonText: string; url: string }
+  | { kind: "location"; latitude: number; longitude: number; name?: string; address?: string }
+  | { kind: "flow"; body: string; header?: string; footer?: string; flowId: string; cta: string; screen: string; flowToken: string; draft: boolean }
   /** An approved WhatsApp template; the only kind allowed outside the 24-hour window. */
   | { kind: "template"; name: string; language: string; bodyParams: string[] };
 
@@ -65,6 +70,7 @@ export interface ContactSnapshot {
   isTest: boolean;
   /** When the customer's latest still-open enquiry (lead new/qualified/contacted) was created, if any. */
   openEnquiryAt: string | null;
+  tags: string[];
 }
 
 export interface ConversationSnapshot {
@@ -358,6 +364,8 @@ export interface EngineStore {
     reminder: BookingRecord["reminder"];
   }): Promise<{ ok: true; id: string } | { ok: false }>;
   getBooking(id: string): Promise<BookingRecord | null>;
+  /** Adds and removes contact tags; returns the tags afterwards. */
+  updateContactTags(contactId: string, change: { add: string[]; remove: string[] }): Promise<string[]>;
   /** Whether this flow node already messaged the contact since the given time. */
   hasRecentNodeSend(contactId: string, flowId: string, nodeId: string, sinceIso: string): Promise<boolean>;
   getMediaAsset(id: string): Promise<MediaAssetRecord | null>;
@@ -437,6 +445,12 @@ export interface EngineDeps {
    * QStash. The budget is shared by every run in one request (function time limit).
    */
   inlineWait?: { sleep: (ms: number) => Promise<void>; budgetMs: number };
+  /** Outgoing HTTP for the "API request" step (public addresses only). Absent in simulation. */
+  http?: HttpPort;
+}
+
+export interface HttpPort {
+  request(input: { method: "GET" | "POST"; url: string; headers: Record<string, string>; body?: string; timeoutMs: number }): Promise<{ status: number; body: string }>;
 }
 
 export const silentLogger: EngineLogger = { info() {}, warn() {}, error() {} };

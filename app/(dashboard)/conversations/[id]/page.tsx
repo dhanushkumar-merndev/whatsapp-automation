@@ -70,7 +70,7 @@ export default async function ConversationPage({ params }: PageProps<"/conversat
   const settings = await loadSettings();
   const { data: conv } = await supabase
     .from("conversations")
-    .select("id, status, last_inbound_at, is_test, handoff_reason, handoff_at, contacts(id, wa_id, name, profile_name, business_name, opted_out, cooldown_until, first_seen_at)")
+    .select("id, status, last_inbound_at, is_test, handoff_reason, handoff_at, contacts(id, wa_id, name, profile_name, business_name, opted_out, cooldown_until, first_seen_at, tags)")
     .eq("id", id)
     .maybeSingle();
   if (!conv) notFound();
@@ -83,6 +83,7 @@ export default async function ConversationPage({ params }: PageProps<"/conversat
     opted_out: boolean;
     cooldown_until: string | null;
     first_seen_at: string;
+    tags: string[] | null;
   };
 
   const [{ data: messages }, { data: executions }, { data: leads }] = await Promise.all([
@@ -182,6 +183,15 @@ export default async function ConversationPage({ params }: PageProps<"/conversat
               <div>
                 <span className="text-muted-foreground">Last message:</span> {fmtDate(conv.last_inbound_at)}
               </div>
+              {!!contact.tags?.length && (
+                <div className="flex flex-wrap gap-1 pt-1">
+                  {contact.tags.map((t) => (
+                    <Link key={t} href={`/leads?tag=${encodeURIComponent(t)}`} className="rounded-full border px-2 py-0.5 text-xs hover:bg-muted">
+                      #{t}
+                    </Link>
+                  ))}
+                </div>
+              )}
               {conv.status === "handoff" && conv.handoff_reason && (
                 <div className="rounded-xl bg-warning/10 p-2 text-xs text-warning">Handoff: {conv.handoff_reason}</div>
               )}

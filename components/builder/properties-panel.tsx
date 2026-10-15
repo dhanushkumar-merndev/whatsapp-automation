@@ -290,6 +290,12 @@ function NodeForm({
             <MessageField value={str("text")} onChange={(v) => set({ text: v })} rows={5} placeholder="Type the reply…" />
           </Field>
           <TextPreview text={str("text")} />
+          <Section title="Link button (optional)">
+            <div className="grid grid-cols-[120px_1fr] gap-2">
+              <TextField value={str("buttonText")} onChange={(v) => set({ buttonText: v })} maxLength={20} placeholder="Visit website" />
+              <TextField value={str("buttonUrl")} onChange={(v) => set({ buttonUrl: v })} maxLength={2000} placeholder="https://example.com" />
+            </div>
+          </Section>
           <Advanced>
             <Field label="Don't repeat within" help="Skip this message if the same customer already got it recently. 0 = send every time.">
               <NumberField value={num("cooldownHours") ?? 0} onChange={(v) => set({ cooldownHours: v ?? 0 })} min={0} max={720} suffix="hours" />
@@ -697,7 +703,7 @@ function NodeForm({
               }
               options={[
                 { value: "value", label: "An answer or value" },
-                { value: "customer", label: "The customer" },
+                { value: "customer", label: "The customer or the time" },
               ]}
             />
           </Field>
@@ -710,6 +716,7 @@ function NodeForm({
                   options={CUSTOMER_OPERATORS.map((o) => ({ value: o, label: OPERATOR_LABELS[o] }))}
                 />
               </Field>
+              {op === "within_business_hours" && <Note>Yes = inside the opening hours in Settings → Business hours (your timezone).</Note>}
               {op === "has_open_enquiry" && (
                 <Field label="Only count enquiries from the last" help="An enquiry counts while its lead is New, Qualified or Contacted. Mark it Won, Lost or Closed in Leads to let the customer start again. Leave empty for no time limit.">
                   <NumberField
@@ -862,6 +869,145 @@ function NodeForm({
 
     case "send_template":
       return <SendTemplateForm c={c} set={set} />;
+
+    case "send_location":
+      return (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Latitude" error={errors.get("latitude")}>
+              <TextField inputMode="decimal" value={String(c.latitude ?? "")} onChange={(v) => set({ latitude: Number(v) })} />
+            </Field>
+            <Field label="Longitude" error={errors.get("longitude")}>
+              <TextField inputMode="decimal" value={String(c.longitude ?? "")} onChange={(v) => set({ longitude: Number(v) })} />
+            </Field>
+          </div>
+          <Note>In Google Maps, right-click your shop and click the numbers at the top to copy them.</Note>
+          <Field label="Place name">
+            <TextField value={str("name")} onChange={(v) => set({ name: v })} maxLength={100} placeholder="Star Growth Hub" />
+          </Field>
+          <Field label="Address">
+            <MessageField value={str("address")} onChange={(v) => set({ address: v })} rows={2} maxLength={300} />
+          </Field>
+        </div>
+      );
+
+    case "whatsapp_form":
+      return (
+        <div className="space-y-4">
+          <Field label="Flow ID" help="WhatsApp Manager → Account tools → Flows → your form → the number in its details." error={errors.get("flowId")}>
+            <TextField value={str("flowId")} onChange={(v) => set({ flowId: v.trim() })} inputMode="numeric" placeholder="1234567890123456" />
+          </Field>
+          <Field label="First screen ID" help="Shown in the form's JSON, e.g. QUESTION_ONE." error={errors.get("screen")}>
+            <TextField value={str("screen")} onChange={(v) => set({ screen: v.trim() })} className="font-mono text-xs" />
+          </Field>
+          <Field label="Message" error={errors.get("body")}>
+            <MessageField value={str("body")} onChange={(v) => set({ body: v })} rows={2} maxLength={1024} />
+          </Field>
+          <Field label="Button" error={errors.get("cta")}>
+            <TextField value={str("cta")} onChange={(v) => set({ cta: v })} maxLength={20} />
+          </Field>
+          <Field label="Save the answers as" help="Each field by its name: {{vars.form.email}}." error={errors.get("variable")}>
+            <TextField value={str("variable")} onChange={(v) => set({ variable: v })} maxLength={40} className="font-mono text-xs" />
+          </Field>
+          <SwitchField label="Use the draft version" help="For testing a form you have not published yet." checked={bool("draft")} onChange={(v) => set({ draft: v })} />
+          <Note>WhatsApp Forms suit long forms: dropdowns, checkboxes, date pickers. Build them in WhatsApp Manager (no code), then paste the ID here.</Note>
+        </div>
+      );
+
+    case "notify_team":
+      return (
+        <div className="space-y-4">
+          <Field label="Alert title" error={errors.get("title")}>
+            <TextField value={str("title")} onChange={(v) => set({ title: v })} maxLength={200} />
+          </Field>
+          <Field label="Details">
+            <MessageField value={str("message")} onChange={(v) => set({ message: v })} rows={3} maxLength={2000} />
+          </Field>
+          <Note>Shows in the dashboard bell and in Telegram (Settings → Telegram → “Workflow alerts”). The customer doesn&rsquo;t see it.</Note>
+        </div>
+      );
+
+    case "set_variable":
+      return (
+        <div className="space-y-4">
+          <Field label="Variable name" error={errors.get("variable")}>
+            <TextField value={str("variable")} onChange={(v) => set({ variable: v })} maxLength={40} className="font-mono text-xs" placeholder="source" />
+          </Field>
+          <Field label="Value" help="Text, or placeholders like {{vars.service}}.">
+            <MessageField value={str("value")} onChange={(v) => set({ value: v })} rows={2} />
+          </Field>
+        </div>
+      );
+
+    case "add_tag":
+      return (
+        <div className="space-y-4">
+          <Field label="Action">
+            <Chips
+              value={c.action === "remove" ? "remove" : "add"}
+              onChange={(v) => set({ action: v })}
+              options={[
+                { value: "add", label: "Add tags" },
+                { value: "remove", label: "Remove tags" },
+              ]}
+            />
+          </Field>
+          <Field label="Tags" help="Press Enter after each tag." error={errors.get("tags")}>
+            <TagInput value={(c.tags as string[]) ?? []} onChange={(v) => set({ tags: v })} placeholder="hot lead" max={10} />
+          </Field>
+          <Note>Tags appear on the customer&rsquo;s conversation and lead, and you can filter leads by them.</Note>
+        </div>
+      );
+
+    case "api_request": {
+      const headers = (c.headers as { name: string; value: string }[]) ?? [];
+      return (
+        <div className="space-y-4">
+          <div className="grid grid-cols-[88px_1fr] gap-2">
+            <Field label="Method">
+              <SelectField value={(str("method") || "POST") as "POST"} onChange={(v) => set({ method: v })} options={[{ value: "GET", label: "GET" }, { value: "POST", label: "POST" }]} />
+            </Field>
+            <Field label="URL" error={errors.get("url")}>
+              <TextField value={str("url")} onChange={(v) => set({ url: v })} placeholder="https://api.example.com/check?phone={{contact.phone}}" />
+            </Field>
+          </div>
+          <Section
+            title="Headers"
+            aside={
+              <Button variant="outline" size="xs" disabled={headers.length >= 10} onClick={() => set({ headers: [...headers, { name: "", value: "" }] })}>
+                <Plus /> Add
+              </Button>
+            }
+          >
+            <div className="space-y-1.5">
+              {headers.map((h, i) => (
+                <div key={i} className="flex items-center gap-1.5">
+                  <Input value={h.name} onChange={(e) => set({ headers: headers.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)) })} placeholder="Authorization" className="h-8 w-36 rounded-lg text-xs" />
+                  <Input value={h.value} onChange={(e) => set({ headers: headers.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)) })} placeholder="Bearer …" className="h-8 rounded-lg text-xs" />
+                  <Button variant="ghost" size="icon-xs" onClick={() => set({ headers: headers.filter((_, j) => j !== i) })} aria-label="Remove header">
+                    <X />
+                  </Button>
+                </div>
+              ))}
+              {!headers.length && <p className="text-xs text-muted-foreground">None.</p>}
+            </div>
+          </Section>
+          {str("method") !== "GET" && (
+            <Field label="JSON body" help="Placeholders are escaped for JSON automatically.">
+              <MessageField value={str("body")} onChange={(v) => set({ body: v })} rows={5} maxLength={10000} placeholder={'{ "phone": "{{contact.phone}}", "name": "{{vars.name}}" }'} />
+            </Field>
+          )}
+          <Field label="Save the reply as" help="JSON fields: {{vars.api.field}}. {{vars.api.status}} is the HTTP status." error={errors.get("variable")}>
+            <TextField value={str("variable")} onChange={(v) => set({ variable: v })} maxLength={40} className="font-mono text-xs" />
+          </Field>
+          <Field label="Give up after">
+            <NumberField value={num("timeoutSeconds")} onChange={(v) => set({ timeoutSeconds: v ?? 8 })} min={1} max={15} suffix="seconds" />
+          </Field>
+          <Branches nodeId={nodeId} type="api_request" definition={definition} />
+          <Note tone="warning">Header values are stored in the workflow. Use a key meant for this purpose, never a personal password.</Note>
+        </div>
+      );
+    }
 
     case "booking":
       return <BookingForm nodeId={nodeId} c={c} set={set} errors={errors} definition={definition} />;

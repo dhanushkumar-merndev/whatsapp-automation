@@ -25,15 +25,17 @@ export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
   if (filters.assigned === "me") filters.assigned = session.userId;
   const page = Math.max(1, Number(sp.page) || 1);
   const supabase = await createClient();
-  const [{ data: leads, count, error }, { data: staff }, { data: serviceRows }] = await Promise.all([
+  const [{ data: leads, count, error }, { data: staff }, { data: serviceRows }, { data: tagRows }] = await Promise.all([
     fetchLeads(supabase, filters, { from: (page - 1) * PAGE_SIZE, to: page * PAGE_SIZE - 1 }),
     supabase.from("profiles").select("id, full_name, email").eq("status", "active"),
     supabase.from("leads").select("service").not("service", "is", null).limit(500),
+    supabase.from("contacts").select("tags").neq("tags", "{}").limit(1000),
   ]);
+  const tags = [...new Set((tagRows ?? []).flatMap((r) => (r.tags as string[]) ?? []))].sort();
   const staffMap = new Map((staff ?? []).map((s) => [s.id, s.full_name || s.email]));
   const services = [...new Set((serviceRows ?? []).map((r) => r.service as string))].sort();
   const total = count ?? 0;
-  const filtered = ["q", "service", "assigned", "from", "to"].some((k) => typeof sp[k] === "string" && sp[k]) || filters.view !== "all";
+  const filtered = ["q", "service", "assigned", "tag", "from", "to"].some((k) => typeof sp[k] === "string" && sp[k]) || filters.view !== "all";
   const qs = (patch: Record<string, string>) => {
     const p = new URLSearchParams(Object.entries(sp).filter(([, v]) => typeof v === "string") as [string, string][]);
     for (const [k, v] of Object.entries(patch)) {
@@ -67,7 +69,7 @@ export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
         }))}
       />
       <div className="mb-4">
-        <LeadFilters services={services} staff={(staff ?? []).map((s) => ({ id: s.id, name: s.full_name || s.email }))} />
+        <LeadFilters services={services} tags={tags} staff={(staff ?? []).map((s) => ({ id: s.id, name: s.full_name || s.email }))} />
       </div>
       {error && <p className="mb-4 rounded-xl bg-destructive/10 p-3 text-sm text-destructive">{error.message}</p>}
       {!leads?.length ? (

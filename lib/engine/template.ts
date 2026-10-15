@@ -32,12 +32,16 @@ export function stringify(value: unknown): string {
   return "";
 }
 
-export function renderTemplate(template: string, scope: TemplateScope): string {
+/** `escape` is applied to each inserted value, e.g. for URLs or JSON bodies. */
+export function renderTemplate(template: string, scope: TemplateScope, escape: (value: string) => string = (v) => v): string {
   return template.replace(TOKEN, (_m, path: string, fallback?: string) => {
     const value = stringify(lookup(scope, path)).trim();
-    return value.length > 0 ? value : (fallback ?? "");
+    return escape(value.length > 0 ? value : (fallback ?? ""));
   });
 }
+
+/** Escapes a value for use inside a JSON string literal. */
+export const jsonEscape = (v: string) => JSON.stringify(v).slice(1, -1);
 
 /** Lists variables referenced by a template, e.g. ["contact.name", "vars.service"]. */
 export function templateVariables(template: string): string[] {

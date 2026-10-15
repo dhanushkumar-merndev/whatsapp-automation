@@ -16,6 +16,12 @@ export const NODE_TYPES = [
   "interactive",
   "booking",
   "send_template",
+  "send_location",
+  "whatsapp_form",
+  "notify_team",
+  "set_variable",
+  "add_tag",
+  "api_request",
   "validation",
   "condition",
   "save_lead",
@@ -48,6 +54,9 @@ export const sendMessageConfig = z.object({
   text: messageText,
   /** Do not send this message to the same contact again within this many hours (0 = always send). */
   cooldownHours: z.number().int().min(0).max(24 * 30).default(0),
+  /** Optional link button under the message (WhatsApp "call to action" URL). */
+  buttonText: z.string().trim().max(20).default(""),
+  buttonUrl: z.string().trim().max(2000).default(""),
 });
 
 export const sendMediaConfig = z.object({
@@ -152,6 +161,58 @@ export const sendTemplateConfig = z.object({
   bodyParams: z.array(z.string().max(1024)).max(20).default([]),
 });
 
+export const sendLocationConfig = z.object({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  name: z.string().max(100).default(""),
+  address: z.string().max(300).default(""),
+});
+
+/** A WhatsApp Form (Meta "Flow") built in WhatsApp Manager, sent as a button that opens it. */
+export const whatsappFormConfig = z.object({
+  flowId: z.string().trim().regex(/^\d{5,30}$/, "Paste the Flow ID (a number) from WhatsApp Manager → Flows"),
+  /** First screen id of the form, e.g. "QUESTION_ONE". */
+  screen: z.string().trim().min(1).max(100).regex(/^[A-Za-z0-9_]+$/, "Screen ids use letters, numbers and _"),
+  cta: z.string().trim().min(1).max(20).default("Open form"),
+  body: messageText.default("Please fill in this short form."),
+  header: z.string().max(60).default(""),
+  footer: z.string().max(60).default(""),
+  /** Send the draft version (for testing before the form is published). */
+  draft: z.boolean().default(false),
+  variable: variableName.default("form"),
+});
+
+export const notifyTeamConfig = z.object({
+  title: z.string().trim().min(1).max(200).default("Customer needs attention"),
+  message: z.string().max(2000).default("{{contact.name|A customer}} · {{contact.phone}}"),
+});
+
+export const setVariableConfig = z.object({
+  variable: variableName,
+  value: z.string().max(4096).default(""),
+});
+
+const tagName = z.string().trim().min(1).max(40).regex(/^[\p{L}\p{N} _-]+$/u, "Tags use letters, numbers, spaces, _ and -");
+export const addTagConfig = z.object({
+  tags: z.array(tagName).min(1, "Add at least one tag").max(10),
+  action: z.enum(["add", "remove"]).default("add"),
+});
+
+export const apiRequestConfig = z.object({
+  method: z.enum(["GET", "POST"]).default("POST"),
+  /** Public https URL; placeholders allowed. */
+  url: z.string().trim().min(1, "Enter a URL").max(2000),
+  headers: z
+    .array(z.object({ name: z.string().trim().min(1).max(100).regex(/^[A-Za-z0-9-]+$/, "Header names use letters, numbers and -"), value: z.string().max(2000) }))
+    .max(10)
+    .default([]),
+  /** JSON body for POST; placeholders allowed. */
+  body: z.string().max(10_000).default(""),
+  /** The JSON reply is saved here: {{vars.api.field}}. */
+  variable: variableName.default("api"),
+  timeoutSeconds: z.number().int().min(1).max(15).default(8),
+});
+
 export const validationConfig = z.object({
   variable: variableName,
   required: z.boolean().default(true),
@@ -177,6 +238,7 @@ export const CONDITION_OPERATORS = [
   "customer_is_returning",
   "option_selected",
   "has_open_enquiry",
+  "within_business_hours",
 ] as const;
 
 export const conditionConfig = z.object({
@@ -235,6 +297,12 @@ export const NODE_CONFIG_SCHEMAS = {
   interactive: interactiveConfig,
   booking: bookingConfig,
   send_template: sendTemplateConfig,
+  send_location: sendLocationConfig,
+  whatsapp_form: whatsappFormConfig,
+  notify_team: notifyTeamConfig,
+  set_variable: setVariableConfig,
+  add_tag: addTagConfig,
+  api_request: apiRequestConfig,
   validation: validationConfig,
   condition: conditionConfig,
   save_lead: saveLeadConfig,

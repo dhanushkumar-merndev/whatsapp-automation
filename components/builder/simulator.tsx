@@ -87,6 +87,20 @@ function OutboundBubble({ m, onPick }: { m: OutboundMessage; onPick: (id: string
       </div>
     );
   }
+  if (m.kind === "cta_url" || m.kind === "flow") {
+    return (
+      <div>
+        <div className="whitespace-pre-wrap">{m.body}</div>
+        <div className="mt-2 rounded-md border border-success/30 px-2 py-1 text-center text-xs text-success">
+          {m.kind === "cta_url" ? `↗ ${m.buttonText}` : m.cta}
+        </div>
+        {m.kind === "flow" && <div className="mt-1 text-[11px] text-muted-foreground">WhatsApp Forms open only on a real phone.</div>}
+      </div>
+    );
+  }
+  if (m.kind === "location") {
+    return <div>📍 {[m.name, m.address].filter(Boolean).join(", ") || `${m.latitude}, ${m.longitude}`}</div>;
+  }
   if (m.kind === "template") {
     return (
       <div>

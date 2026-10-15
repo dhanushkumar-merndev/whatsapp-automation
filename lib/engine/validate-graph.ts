@@ -18,7 +18,7 @@ export interface GraphValidation {
   warnings: GraphIssue[];
 }
 
-const INPUT_NODES: NodeType[] = ["ask_question", "interactive", "booking", "validation"];
+const INPUT_NODES: NodeType[] = ["ask_question", "interactive", "booking", "whatsapp_form", "validation"];
 
 /**
  * Static checks run continuously in the editor and again before publishing.
@@ -105,6 +105,12 @@ export function validateFlow(def: FlowDefinition): GraphValidation {
       }
     }
     if (n.type === "send_template" && !cfg.name) err(`“${label(n.id)}”: choose a template.`, n.id);
+    if (n.type === "api_request" && !/^https?:\/\/[^\s/{}]+/i.test(cfg.url as string)) {
+      err(`“${label(n.id)}”: the URL must start with https:// and a fixed host name.`, n.id);
+    }
+    if (n.type === "send_message" && Boolean(cfg.buttonText) !== Boolean(cfg.buttonUrl)) {
+      warn(`“${label(n.id)}”: set both the button text and its link, or neither.`, n.id);
+    }
     if (n.type === "ask_question" && cfg.inputType === "number" && cfg.min !== null && cfg.max !== null && (cfg.min as number) > (cfg.max as number)) {
       err(`“${label(n.id)}”: the smallest allowed number is greater than the largest.`, n.id);
     }

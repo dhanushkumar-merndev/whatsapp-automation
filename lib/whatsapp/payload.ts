@@ -49,6 +49,50 @@ export function buildMessagePayload(to: string, message: OutboundMessage, mediaI
           },
         },
       };
+    case "cta_url":
+      return {
+        ...base,
+        type: "interactive",
+        interactive: {
+          type: "cta_url",
+          body: { text: message.body.slice(0, 1024) },
+          action: { name: "cta_url", parameters: { display_text: message.buttonText.slice(0, 20), url: message.url } },
+        },
+      };
+    case "location":
+      return {
+        ...base,
+        type: "location",
+        location: {
+          latitude: message.latitude,
+          longitude: message.longitude,
+          ...(message.name ? { name: message.name } : {}),
+          ...(message.address ? { address: message.address } : {}),
+        },
+      };
+    case "flow":
+      return {
+        ...base,
+        type: "interactive",
+        interactive: {
+          type: "flow",
+          ...(message.header ? { header: { type: "text", text: message.header } } : {}),
+          body: { text: message.body.slice(0, 1024) },
+          ...(message.footer ? { footer: { text: message.footer } } : {}),
+          action: {
+            name: "flow",
+            parameters: {
+              flow_message_version: "3",
+              flow_token: message.flowToken,
+              flow_id: message.flowId,
+              flow_cta: message.cta.slice(0, 20),
+              flow_action: "navigate",
+              flow_action_payload: { screen: message.screen },
+              ...(message.draft ? { mode: "draft" } : {}),
+            },
+          },
+        },
+      };
     case "template":
       return {
         ...base,
