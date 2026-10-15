@@ -58,7 +58,7 @@ export function NotificationsMenu({
         {items.length === 0 ? (
           <div className="px-3 py-8 text-center text-sm text-muted-foreground">You&apos;re all caught up.</div>
         ) : (
-          <ScrollArea className="max-h-96">
+          <ScrollArea className="[&>[data-slot=scroll-area-viewport]]:max-h-96">
             <ul className="divide-y">
               {items.map((n) => (
                 <li key={n.id} className="px-3 py-2.5">

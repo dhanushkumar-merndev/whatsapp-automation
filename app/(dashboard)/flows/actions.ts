@@ -129,23 +129,20 @@ export async function saveDraftAction(input: {
     const flowId = uuid.parse(input.flowId);
     const definition = flowDefinitionSchema.parse(input.definition);
     const supabase = await createClient();
-    const { data: current, error: readError } = await supabase
-      .from("flows")
-      .select("draft_updated_at, status")
-      .eq("id", flowId)
-      .single();
+    const { data: current, error: readError } = await supabase.from("flows").select("status").eq("id", flowId).single();
     if (readError) throw new Error(readError.message);
     if (current.status === "archived") throw new Error("Archived flows cannot be edited. Duplicate it instead.");
-    if (input.expectedDraftUpdatedAt && current.draft_updated_at !== input.expectedDraftUpdatedAt) {
-      throw new Error("This flow was changed in another window. Reload the page to get the latest version before saving.");
-    }
-    const draftUpdatedAt = new Date().toISOString();
-    const { error } = await supabase
+    let update = supabase
       .from("flows")
-      .update({ draft_definition: definition, draft_updated_at: draftUpdatedAt, updated_by: session.userId })
+      .update({ draft_definition: definition, draft_updated_at: new Date().toISOString(), updated_by: session.userId })
       .eq("id", flowId);
+    // Compare-and-set in one statement. Postgres compares the instants, so "…Z" and "…+00:00" match.
+    if (input.expectedDraftUpdatedAt) update = update.eq("draft_updated_at", input.expectedDraftUpdatedAt);
+    const { data: saved, error } = await update.select("draft_updated_at").maybeSingle();
     if (error) throw new Error(error.message);
-    return { draftUpdatedAt };
+    if (!saved) throw new Error("This flow was changed in another window. Reload the page to get the latest version before saving.");
+    // Hand back the stored value (Postgres formats it as "…+00:00"), not our own ISO string.
+    return { draftUpdatedAt: saved.draft_updated_at as string };
   });
 }
 
