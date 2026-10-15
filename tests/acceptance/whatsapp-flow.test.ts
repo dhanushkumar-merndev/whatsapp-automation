@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createHarness } from "../helpers/harness";
 import { metaInboundPayload, metaStatusPayload } from "../helpers/meta";
-import { buildDefaultFlowDefinition } from "@/lib/flows/default-flow";
+import { buildDefaultFlowDefinition } from "../fixtures/star-flow";
 import { SendError } from "@/lib/engine/types";
 
 /** Drives the default Star Growth Hub flow up to the service question. */
@@ -435,12 +435,5 @@ describe("Reliability and policy edge cases", () => {
     await h.say("Hi");
     expect(h.sender.sent).toHaveLength(1);
     expect(h.scheduler.scheduled).toHaveLength(1);
-  });
-
-  it("hard usage cap skips non-essential delays instead of dropping the customer", async () => {
-    const h = createHarness({ settings: { usage: { hardCapEnabled: true, qstashDailyBudget: 0 } } as never });
-    await h.say("Hi");
-    expect(h.scheduler.scheduled).toHaveLength(0);
-    expect(h.sender.texts().at(-1)).toBe("May I know your name, please?");
   });
 });

@@ -1,9 +1,9 @@
 import type { FlowDefinition, FlowEdge, FlowNode, NodeType } from "@/lib/engine/schema";
 
 /**
- * The default Star Growth Hub enquiry flow (spec §7). Every message, question
- * and option below is ordinary flow data — editable in the Flow Builder
- * without code changes.
+ * Test fixture: the original Star Growth Hub enquiry flow. Workflows are now
+ * created in the builder or imported from JSON; this copy keeps the engine
+ * tests exercising a realistic flow.
  */
 
 export const STAR_SERVICES = [
@@ -55,7 +55,7 @@ export function buildDefaultFlowDefinition(brochureAssetId: string | null = null
       filename: "Star-Growth-Hub-Brochure.pdf",
       cooldownHours: 24,
     }),
-    node("n_wait", "wait", "Wait 5 seconds", X, step * 4, { amount: 5, unit: "seconds", essential: false }),
+    node("n_wait", "wait", "Wait 5 seconds", X, step * 4, { amount: 5, unit: "seconds" }),
     node("n_known", "condition", "Name already known?", X, step * 5, {
       left: "{{contact.name}}",
       operator: "is_set",

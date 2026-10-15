@@ -67,7 +67,7 @@ function createSim(definition: FlowDefinition, settings: AppSettings, media: Med
     crm,
     // The simulator never touches Redis.
     limiter: { limit: async () => ({ success: true, remaining: 99, reset: 0 }) },
-    settings: { ...settings, usage: { ...settings.usage, hardCapEnabled: false } },
+    settings,
     now,
     logger: { info() {}, warn() {}, error() {} },
     mode: "simulation",
@@ -210,6 +210,7 @@ export function Simulator({
         providerTimestamp: new Date(s.clock.t).toISOString(),
         isTest: true,
       });
+      if (r.ignored) return;
       if (returning && r.newContact) {
         await s.store.updateContact(r.contactId, { name: "Test Customer" });
         const flow = [...s.store.flows.values()][0];

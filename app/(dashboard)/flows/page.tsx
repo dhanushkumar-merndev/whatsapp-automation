@@ -9,11 +9,9 @@ import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { NewFlowDialog } from "@/components/flows/new-flow-dialog";
 import { FlowRowActions } from "@/components/flows/flow-row-actions";
-import { LevelPill } from "@/components/builder/usage-report";
 import { requirePageSession } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { fmtAgo, fmtNumber } from "@/lib/format";
-import type { EstimateSnapshot } from "@/lib/estimator/estimate";
 
 export const metadata: Metadata = { title: "My Flows" };
 
@@ -24,7 +22,7 @@ export default async function FlowsPage({ searchParams }: PageProps<"/flows">) {
   const supabase = await createClient();
   let q = supabase
     .from("flows")
-    .select("id, name, description, status, priority, draft_updated_at, published_version_id, estimate_snapshot, flow_versions!flow_versions_flow_id_fkey(version, created_at)")
+    .select("id, name, description, status, draft_updated_at, published_version_id, flow_versions!flow_versions_flow_id_fkey(version, created_at)")
     .order("draft_updated_at", { ascending: false });
   if (!showArchived) q = q.neq("status", "archived");
   const { data: flows, error } = await q;
@@ -67,7 +65,6 @@ export default async function FlowsPage({ searchParams }: PageProps<"/flows">) {
                 <TableHead>Status</TableHead>
                 <TableHead>Live version</TableHead>
                 <TableHead className="hidden text-right md:table-cell">In progress</TableHead>
-                <TableHead className="hidden lg:table-cell">Projected usage</TableHead>
                 <TableHead className="hidden sm:table-cell">Edited</TableHead>
                 <TableHead className="w-10" />
               </TableRow>
@@ -76,7 +73,6 @@ export default async function FlowsPage({ searchParams }: PageProps<"/flows">) {
               {flows.map((f) => {
                 const versions = (f.flow_versions as { version: number; created_at: string }[] | null) ?? [];
                 const latest = versions.reduce((m, v) => Math.max(m, v.version), 0);
-                const snap = f.estimate_snapshot as EstimateSnapshot | null;
                 return (
                   <TableRow key={f.id} className="relative">
                     <TableCell>
@@ -84,7 +80,6 @@ export default async function FlowsPage({ searchParams }: PageProps<"/flows">) {
                         {f.name}
                       </Link>
                       {f.description && <div className="max-w-md truncate text-xs text-muted-foreground">{f.description}</div>}
-                      <div className="text-[11px] text-muted-foreground">Priority {f.priority}</div>
                     </TableCell>
                     <TableCell>
                       <StatusBadge status={f.status} />
@@ -93,18 +88,6 @@ export default async function FlowsPage({ searchParams }: PageProps<"/flows">) {
                       {f.published_version_id ? `v${latest}` : <span className="text-xs text-muted-foreground">Draft — not published</span>}
                     </TableCell>
                     <TableCell className="hidden text-right tabular-nums md:table-cell">{fmtNumber(runningCount.get(f.id) ?? 0)}</TableCell>
-                    <TableCell className="hidden lg:table-cell">
-                      {snap ? (
-                        <div className="space-y-0.5">
-                          <LevelPill level={snap.overallLevel} />
-                          <div className="text-[11px] text-muted-foreground">
-                            {fmtNumber(snap.whatsappPerDay)} replies · {fmtNumber(snap.qstashPerDay, 1)} QStash / day
-                          </div>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">Not published</span>
-                      )}
-                    </TableCell>
                     <TableCell className="hidden text-sm text-muted-foreground sm:table-cell">{fmtAgo(f.draft_updated_at)}</TableCell>
                     <TableCell className="relative z-10">
                       <FlowRowActions id={f.id} status={f.status} published={Boolean(f.published_version_id)} />

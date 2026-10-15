@@ -1,8 +1,9 @@
 import { resumeWithInput, startExecution } from "@/lib/engine/runner";
 import { selectTrigger } from "@/lib/engine/trigger";
 import { isWindowOpen } from "@/lib/engine/window";
-import type { ContactSnapshot, ConversationSnapshot, EngineDeps, ExecutionRecord, FlowVersionRecord, InboundInput } from "@/lib/engine/types";
-import type { AppStore, Limiter, PendingInbound } from "./types";
+import type { ContactSnapshot, ConversationSnapshot, EngineDeps, FlowVersionRecord, InboundInput } from "@/lib/engine/types";
+import type { AppStore, Limiter, PendingInbound, TriggerCandidateRecord, TurnState } from "./types";
+import { NON_ACTIONABLE_TYPES } from "./webhook-ingest";
 
 export interface PipelineDeps extends EngineDeps {
   store: AppStore;
@@ -10,8 +11,9 @@ export interface PipelineDeps extends EngineDeps {
 }
 
 const LOCK_TTL_SECONDS = 60;
-/** Message types that are recorded but never drive automation. */
-const NON_ACTIONABLE = new Set(["reaction", "system", "unsupported", "ephemeral", "errors", "unknown"]);
+const BATCH = 20;
+/** Meta timestamps are whole seconds, so allow one second before comparing with our clock. */
+const TIMESTAMP_SLACK_MS = 1000;
 
 export function toInboundInput(msg: PendingInbound): InboundInput {
   const p = msg.payload ?? {};
@@ -41,23 +43,26 @@ export async function processConversation(deps: PipelineDeps, conversationId: st
   let processed = 0;
 
   for (let round = 0; round < 5; round++) {
-    if (!(await store.acquireLock(conversationId, token, LOCK_TTL_SECONDS))) {
-      return { processed, locked: true };
-    }
+    const turn = await store.beginTurn(conversationId, token, LOCK_TTL_SECONDS, BATCH);
+    if (!turn.locked) return { processed, locked: true };
     try {
-      for (;;) {
-        const batch = await store.listPendingInbound(conversationId, 20);
-        if (batch.length === 0) break;
+      // The first message uses the state fetched with the lock; later ones reload it,
+      // because handling a message can change it.
+      let state: TurnState | null | undefined = turn.state;
+      let batch = turn.pending;
+      while (batch.length) {
         for (const msg of batch) {
           try {
-            await handleInbound(deps, conversationId, msg);
+            await handleInbound(deps, msg, state === undefined ? await store.getTurnState(conversationId) : state);
           } catch (e) {
             const error = e instanceof Error ? e.message : String(e);
             deps.logger.error("inbound processing failed", { conversationId, messageId: msg.id, error });
             await store.markInbound(msg.id, "failed", error.slice(0, 500));
           }
+          state = undefined;
           processed++;
         }
+        batch = await store.listPendingInbound(conversationId, BATCH);
       }
     } finally {
       await store.releaseLock(conversationId, token);
@@ -95,7 +100,6 @@ async function sendSystemText(
       message: { kind: "text", text },
     });
     await deps.store.completeOutbound(key, { waMessageId });
-    await deps.store.incrementUsage({ service: "whatsapp", metric: "messages_sent", isTest: conversation.isTest });
   } catch (e) {
     await deps.store.completeOutbound(key, { error: e instanceof Error ? e.message : String(e) });
   }
@@ -113,35 +117,35 @@ async function stopExecution(deps: PipelineDeps, executionId: string, status: "c
   }
 }
 
-function loadStartData(store: AppStore, conversation: ConversationSnapshot, contact: ContactSnapshot) {
-  return Promise.all([store.listTriggerCandidates(conversation.isTest), store.countPriorExecutions(contact.id)]);
-}
-
 /**
- * Reads for steps 5–6, fetched together with the rate-limit check so a reply
- * needs fewer sequential round trips. They have no side effects: when an
- * earlier step returns, they only cost a wasted read.
+ * Flow definitions for step 5 or 6, loaded alongside the rate-limit check.
+ * Published versions are immutable and cached per instance, so this is
+ * usually free.
  */
-async function prefetchFlowData(store: AppStore, active: ExecutionRecord | null, conversation: ConversationSnapshot, contact: ContactSnapshot) {
-  if (active) {
-    const [status, version] = await Promise.all([store.getFlowStatus(active.flowId), store.getFlowVersion(active.flowVersionId)]);
-    return { status, version, start: null };
-  }
-  return { status: null, version: null, start: await loadStartData(store, conversation, contact) };
+async function loadFlowData(store: AppStore, state: TurnState) {
+  if (state.active) return { version: await store.getFlowVersion(state.active.flowVersionId), candidates: null };
+  return { version: null, candidates: await loadCandidates(store, state) };
 }
 
-async function handleInbound(deps: PipelineDeps, conversationId: string, msg: PendingInbound) {
+async function loadCandidates(store: AppStore, state: TurnState): Promise<TriggerCandidateRecord[]> {
+  const versions = await Promise.all(state.candidates.map((c) => store.getFlowVersion(c.versionId)));
+  return state.candidates.flatMap((c, i) => (versions[i] ? [{ ...c, definition: versions[i].definition }] : []));
+}
+
+const sentBefore = (msg: PendingInbound, iso: string | null | undefined) =>
+  Boolean(iso) && new Date(msg.providerTimestamp).getTime() + TIMESTAMP_SLACK_MS <= new Date(iso!).getTime();
+
+async function handleInbound(deps: PipelineDeps, msg: PendingInbound, state: TurnState | null) {
   const { store, settings } = deps;
-  const [ctx, active] = await Promise.all([store.getConversationContext(conversationId), store.getActiveExecution(conversationId)]);
-  if (!ctx) {
+  if (!state) {
     await store.markInbound(msg.id, "ignored", "conversation_not_found");
     return;
   }
-  const { conversation, contact } = ctx;
+  const { conversation, contact, active } = state;
   const now = deps.now();
   const input = toInboundInput(msg);
 
-  if (NON_ACTIONABLE.has(msg.type)) {
+  if (NON_ACTIONABLE_TYPES.has(msg.type)) {
     await store.markInbound(msg.id, "ignored", `non_actionable_type:${msg.type}`);
     return;
   }
@@ -155,15 +159,8 @@ async function handleInbound(deps: PipelineDeps, conversationId: string, msg: Pe
       tokens: settings.rateLimits.inboundPerMinute,
       windowSeconds: 60,
     }),
-    prefetchFlowData(store, active, conversation, contact),
+    loadFlowData(store, state),
   ]);
-  await store.incrementUsage({
-    service: "redis",
-    metric: "commands",
-    quantity: settings.usage.redisCommandsPerCheck,
-    isTest: conversation.isTest,
-    source: "estimate",
-  });
   if (!rl.success) {
     await store.recordSecurityEvent({ scope: "inbound_message", identifier: contact.waId, contactId: contact.id, action: "throttled" });
     const since = new Date(now.getTime() - 10 * 60_000).toISOString();
@@ -256,13 +253,17 @@ async function handleInbound(deps: PipelineDeps, conversationId: string, msg: Pe
 
   // 5. Resume the active execution when appropriate.
   if (active) {
-    const flowStatus = flow.status;
+    const flowStatus = state.activeFlowStatus;
     const stale = now.getTime() - new Date(active.lastActivityAt).getTime();
     if (flowStatus !== "active" && flowStatus !== "testing") {
       await stopExecution(deps, active.id, "cancelled", `Flow is ${flowStatus ?? "missing"}`);
       await store.setExecutionStatus(active.id, "paused", `Flow is ${flowStatus ?? "missing"}`);
     } else if (active.status === "waiting_input" && stale > settings.execution.resumeWithinHours * 3_600_000) {
       await store.setExecutionStatus(active.id, "abandoned", "Customer replied after the resume window");
+    } else if (active.status === "waiting_input" && active.awaiting?.kind === "input" && sentBefore(msg, active.awaiting.since)) {
+      // Written before the question went out (e.g. during a short wait): keep it, but it is not the answer.
+      await store.markInbound(msg.id, "processed", "received_before_question", active.id);
+      return;
     } else if (active.status === "waiting_input") {
       const version = flow.version;
       if (!version) throw new Error("Flow version missing for active execution");
@@ -283,9 +284,14 @@ async function handleInbound(deps: PipelineDeps, conversationId: string, msg: Pe
   }
 
   // 6. Start a flow — only ever in response to this customer message.
+  if (sentBefore(msg, state.lastCompletedAt)) {
+    // Sent while the previous run was still replying: don't restart the flow for it.
+    await store.markInbound(msg.id, "processed", "received_during_previous_run");
+    return;
+  }
   // Prefetched unless an active execution was just ended above.
-  const [candidates, priorExecutions] = flow.start ?? (await loadStartData(store, conversation, contact));
-  const isNewCustomer = priorExecutions === 0;
+  const candidates = flow.candidates ?? (await loadCandidates(store, state));
+  const isNewCustomer = state.priorExecutions === 0;
   const selected = selectTrigger(candidates, input, isNewCustomer);
   if (!selected) {
     await store.markInbound(msg.id, "processed", "no_matching_flow");

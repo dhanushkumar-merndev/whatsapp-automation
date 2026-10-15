@@ -29,15 +29,14 @@ const ends = (log: string[]) => log.filter((l) => l.startsWith("end"));
 afterEach(() => vi.restoreAllMocks());
 
 describe("SupabaseStore background writes", () => {
-  it("returns before node logs, usage and notifications are written, and flush() waits for them", async () => {
+  it("returns before node logs and notifications are written, and flush() waits for them", async () => {
     const { db, log } = fakeDb();
     const store = new SupabaseStore(db, { backgroundWrites: true });
     await store.logNode(node("a"));
-    await store.incrementUsage({ service: "whatsapp", metric: "messages_sent" });
     await store.notify({ kind: "handoff", severity: "warning", title: "t" });
     expect(ends(log)).toHaveLength(0);
     await store.flush();
-    expect(ends(log)).toHaveLength(3);
+    expect(ends(log)).toHaveLength(2);
   });
 
   it("keeps node log inserts in order even when an earlier one is slower", async () => {

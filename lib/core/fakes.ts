@@ -26,6 +26,13 @@ export class RecordingSender implements MessageSender {
     return { waMessageId };
   }
 
+  /** Messages marked read with "typing…" (live mode only). */
+  reads: string[] = [];
+
+  async markRead(input: { waMessageId: string }) {
+    this.reads.push(input.waMessageId);
+  }
+
   texts(): string[] {
     return this.sent.map(({ message: m }) =>
       m.kind === "text" ? m.text : m.kind === "media" ? `[${m.mediaType}]` : m.body,

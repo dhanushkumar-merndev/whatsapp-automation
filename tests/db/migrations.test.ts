@@ -117,6 +117,89 @@ describe("conversation lock", () => {
   });
 });
 
+describe("fast turn", () => {
+  const msg = (id: string, extra: Record<string, unknown> = {}) => ({
+    phone_number_id: "pn1",
+    waba_id: "waba",
+    wa_id: "919800000777",
+    profile_name: "Ravi",
+    wa_message_id: id,
+    type: "text",
+    body: "Hi",
+    payload: {},
+    provider_timestamp: "2026-10-14T10:00:00Z",
+    is_test: false,
+    ...extra,
+  });
+
+  it("record_inbound_message resolves the account and reports what the webhook needs", async () => {
+    const r = (await one<{ r: Record<string, unknown> }>(`select public.record_inbound_message($1) as r`, [msg("wamid.F1")])).r;
+    expect(r.account_id).toBe(ACCOUNT);
+    expect(r.conversation_status).toBe("open");
+    expect(r.opted_out).toBe(false);
+    expect(r.duplicate).toBe(false);
+  });
+
+  it("ignores unknown numbers, other WABAs and disabled accounts", async () => {
+    const other = await one<{ r: Record<string, unknown> }>(`select public.record_inbound_message($1) as r`, [
+      msg("wamid.F2", { phone_number_id: "nope" }),
+    ]);
+    const wrongWaba = await one<{ r: Record<string, unknown> }>(`select public.record_inbound_message($1) as r`, [
+      msg("wamid.F3", { waba_id: "other" }),
+    ]);
+    expect(other.r.ignored).toBe("unknown_account");
+    expect(wrongWaba.r.ignored).toBe("unknown_account");
+    await db.query(`update public.whatsapp_accounts set enabled = false where id = $1`, [ACCOUNT]);
+    const disabled = await one<{ r: Record<string, unknown> }>(`select public.record_inbound_message($1) as r`, [msg("wamid.F4")]);
+    await db.query(`update public.whatsapp_accounts set enabled = true where id = $1`, [ACCOUNT]);
+    expect(disabled.r.ignored).toBe("unknown_account");
+  });
+
+  it("marks numbers listed in settings as tests", async () => {
+    await db.query(`update public.app_settings set settings = settings || '{"testPhoneNumbers":["919800000888"]}'::jsonb where id = 1`);
+    const r = await one<{ r: Record<string, unknown> }>(`select public.record_inbound_message($1) as r`, [
+      msg("wamid.F5", { wa_id: "919800000888" }),
+    ]);
+    expect(r.r.is_test).toBe(true);
+  });
+
+  it("begin_turn locks once and returns the pending messages with the turn state", async () => {
+    const { r } = await one<{ r: { conversation_id: string } }>(`select public.record_inbound_message($1) as r`, [msg("wamid.F6")]);
+    const conv = r.conversation_id;
+    const a = "33333333-3333-4333-8333-333333333333";
+    const b = "44444444-4444-4444-8444-444444444444";
+    const first = (await one<{ t: Record<string, unknown> }>(`select public.begin_turn($1, $2, 30, 20) as t`, [conv, a])).t;
+    expect(first.locked).toBe(true);
+    expect((first.pending as { wa_message_id: string }[]).map((m) => m.wa_message_id)).toEqual(["wamid.F1", "wamid.F6"]);
+    const state = first.state as { conversation: Record<string, unknown>; contact: Record<string, unknown>; active: unknown; candidates: unknown[] };
+    expect(state.conversation.phone_number_id).toBe("pn1");
+    expect(state.contact.wa_id).toBe("919800000777");
+    expect(state.active).toBeNull();
+    expect(state.candidates).toEqual([]);
+    const second = (await one<{ t: Record<string, unknown> }>(`select public.begin_turn($1, $2, 30, 20) as t`, [conv, b])).t;
+    expect(second).toEqual({ locked: false });
+    await db.query(`select public.release_conversation_lock($1, $2)`, [conv, a]);
+  });
+
+  it("lists the live flow (and the test flow only for test conversations) as candidates", async () => {
+    const live = await one<{ id: string }>(`insert into public.flows (name, status) values ('Live', 'active') returning id`);
+    const lv = await one<{ id: string }>(
+      `insert into public.flow_versions (flow_id, version, definition) values ($1, 1, '{"nodes":[],"edges":[]}') returning id`,
+      [live.id],
+    );
+    await db.query(`update public.flows set published_version_id = $2 where id = $1`, [live.id, lv.id]);
+    const conv = await one<{ id: string }>(
+      `select cv.id from public.conversations cv join public.contacts c on c.id = cv.contact_id where c.wa_id = '919800000777'`,
+    );
+    const state = (await one<{ s: { candidates: { flow_id: string; version_id: string }[] } }>(
+      `select public.conversation_turn_state($1) as s`,
+      [conv.id],
+    )).s;
+    expect(state.candidates).toEqual([expect.objectContaining({ flow_id: live.id, version_id: lv.id })]);
+    await db.query(`update public.flows set status = 'paused' where id = $1`, [live.id]);
+  });
+});
+
 describe("outbound idempotency and job claims", () => {
   it("claims an outbound send only once", async () => {
     const conv = await one<{ id: string; contact_id: string }>(`select id, contact_id from public.conversations limit 1`);

@@ -65,21 +65,15 @@ export const appSettingsSchema = z.object({
       scheduledJobsPerExecution: z.number().int().min(1).max(200).default(25),
     })
     .prefault({}),
-  usage: z
-    .object({
-      hardCapEnabled: z.boolean().default(false),
-      /** Internal daily QStash budget used by the hard cap (≤ provider allowance). */
-      qstashDailyBudget: z.number().int().min(0).default(950),
-      /** Estimated Redis commands consumed per rate-limit check (sliding window ≈ 3–4). */
-      redisCommandsPerCheck: z.number().min(0).max(20).default(4),
-      qstashRetries: z.number().int().min(0).max(5).default(3),
-    })
-    .prefault({}),
   execution: z
     .object({
       /** Resume an unfinished enquiry when the customer replies within this many hours. */
       resumeWithinHours: z.number().int().min(1).max(24 * 30).default(72),
       maxStepsPerRun: z.number().int().min(10).max(500).default(100),
+      /** Waits up to this long run inside the reply itself (no QStash hop); longer waits are scheduled. */
+      inlineWaitMaxSeconds: z.number().int().min(0).max(25).default(20),
+      /** QStash retries for scheduled steps and CRM retries. */
+      qstashRetries: z.number().int().min(0).max(5).default(3),
     })
     .prefault({}),
   retention: z
@@ -88,26 +82,6 @@ export const appSettingsSchema = z.object({
       messageBodyDays: z.number().int().min(0).max(3650).default(365),
       executionLogDays: z.number().int().min(0).max(3650).default(180),
       securityEventDays: z.number().int().min(0).max(3650).default(90),
-    })
-    .prefault({}),
-  hosting: z
-    .object({
-      provider: z.literal("vercel").default("vercel"),
-      plan: z.enum(["hobby", "pro", "enterprise"]).default("hobby"),
-      environment: z.enum(["development", "production"]).default("development"),
-    })
-    .prefault({}),
-  estimator: z
-    .object({
-      customersPerDay: z.number().min(0).max(100000).default(20),
-      completionRate: z.number().min(0).max(1).default(0.7),
-      dailyGrowthRate: z.number().min(-0.5).max(1).default(0),
-      validationRetriesPerQuestion: z.number().min(0).max(10).default(0.2),
-      qstashRetryRate: z.number().min(0).max(1).default(0.02),
-      averageMediaSizeMb: z.number().min(0).max(100).default(2),
-      newMediaAssetsPerMonth: z.number().min(0).max(1000).default(2),
-      dbKbPerConversation: z.number().min(0).max(10000).default(24),
-      metaCountryCode: z.string().max(4).default("IN"),
     })
     .prefault({}),
 });

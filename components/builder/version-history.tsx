@@ -8,8 +8,6 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTr
 import { useConfirm } from "@/components/common/confirm-dialog";
 import { rollbackFlowAction, restoreVersionToDraftAction } from "@/app/(dashboard)/flows/actions";
 import { fmtDate } from "@/lib/format";
-import { LevelPill } from "./usage-report";
-import type { WarningLevel } from "@/lib/estimator/estimate";
 
 export interface VersionItem {
   id: string;
@@ -17,7 +15,6 @@ export interface VersionItem {
   note: string | null;
   createdAt: string;
   publishedBy: string | null;
-  level: WarningLevel | null;
 }
 
 export function VersionHistory({
@@ -70,7 +67,6 @@ export function VersionHistory({
                   <div className="text-sm font-medium">
                     Version {v.version} {live && <span className="ml-1 rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-medium text-success">Live</span>}
                   </div>
-                  {v.level && <LevelPill level={v.level} />}
                 </div>
                 <div className="mt-0.5 text-xs text-muted-foreground">
                   {fmtDate(v.createdAt)}

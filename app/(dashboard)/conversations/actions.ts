@@ -43,7 +43,6 @@ export async function sendManualReplyAction(input: { conversationId: string; tex
         message: { kind: "text", text },
       });
       await store.completeOutbound(key, { waMessageId });
-      await store.incrementUsage({ service: "whatsapp", metric: "messages_sent", isTest: ctx.conversation.isTest });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       await store.completeOutbound(key, { error: msg });

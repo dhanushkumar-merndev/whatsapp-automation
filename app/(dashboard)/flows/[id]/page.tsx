@@ -5,11 +5,9 @@ import { FlowEditorClient as FlowEditor } from "@/components/builder/flow-editor
 import { requirePageSession } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { loadSettings } from "@/lib/settings/server";
-import { defaultAssumptions, loadPlanContext } from "@/lib/estimator/plan-context";
 import { flowDefinitionSchema } from "@/lib/engine/schema";
-import type { EstimateReport } from "@/lib/estimator/estimate";
 
-export const metadata: Metadata = { title: "Flow Builder" };
+export const metadata: Metadata = { title: "Workflow" };
 
 export default async function FlowEditorPage({ params }: PageProps<"/flows/[id]">) {
   await requirePageSession("admin");
@@ -20,12 +18,12 @@ export default async function FlowEditorPage({ params }: PageProps<"/flows/[id]"
   const [{ data: flow }, { data: versions }, { data: media }, { data: crm }, settings] = await Promise.all([
     supabase
       .from("flows")
-      .select("id, name, description, status, priority, draft_definition, draft_updated_at, published_version_id")
+      .select("id, name, description, status, draft_definition, draft_updated_at, published_version_id")
       .eq("id", id)
       .maybeSingle(),
     supabase
       .from("flow_versions")
-      .select("id, version, note, created_at, estimate_report, published_by, profiles:published_by(full_name, email)")
+      .select("id, version, note, created_at, published_by, profiles:published_by(full_name, email)")
       .eq("flow_id", id)
       .order("version", { ascending: false }),
     supabase
@@ -39,7 +37,6 @@ export default async function FlowEditorPage({ params }: PageProps<"/flows/[id]"
   ]);
   if (!flow) notFound();
 
-  const plan = await loadPlanContext(settings, flow.id);
   const parsed = flowDefinitionSchema.safeParse(flow.draft_definition);
   const definition = parsed.success ? parsed.data : { nodes: [], edges: [] };
   const live = versions?.find((v) => v.id === flow.published_version_id);
@@ -51,7 +48,6 @@ export default async function FlowEditorPage({ params }: PageProps<"/flows/[id]"
         name: flow.name,
         description: flow.description,
         status: flow.status,
-        priority: flow.priority,
         draftDefinition: definition,
         draftUpdatedAt: flow.draft_updated_at,
         publishedVersionId: flow.published_version_id,
@@ -65,13 +61,10 @@ export default async function FlowEditorPage({ params }: PageProps<"/flows/[id]"
           note: v.note,
           createdAt: v.created_at,
           publishedBy: p?.full_name ?? p?.email ?? null,
-          level: (v.estimate_report as EstimateReport | null)?.overallLevel ?? null,
         };
       })}
       media={(media ?? []).map((m) => ({ id: m.id, name: m.name, kind: m.kind }))}
       crm={(crm ?? []).map((c) => ({ id: c.id, name: c.name, enabled: c.enabled }))}
-      plan={plan}
-      defaultAssumptions={defaultAssumptions(settings)}
       settings={settings}
     />
   );

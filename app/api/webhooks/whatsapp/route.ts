@@ -3,8 +3,8 @@ import { timingSafeEqual } from "node:crypto";
 import { serverEnv } from "@/lib/env";
 import { verifyMetaSignature } from "@/lib/whatsapp/signature";
 import { ingestWebhook } from "@/lib/core/webhook-ingest";
-import { processConversation } from "@/lib/core/process-conversation";
-import { createPipelineDeps } from "@/lib/server/pipeline";
+import { processConversation, type PipelineDeps } from "@/lib/core/process-conversation";
+import { createPipelineDeps, createSender, createStore } from "@/lib/server/pipeline";
 import { createLogger } from "@/lib/server/logger";
 
 export const runtime = "nodejs";
@@ -57,18 +57,43 @@ export async function POST(req: NextRequest) {
     return new Response("Invalid JSON", { status: 400 });
   }
 
-  const deps = await createPipelineDeps("webhook.whatsapp", { backgroundWrites: true });
+  // Record the messages while the settings load: neither waits for the other.
+  const store = createStore({ backgroundWrites: true });
+  const sender = createSender();
+  const depsPromise = createPipelineDeps("webhook.whatsapp", {}, { store, sender });
+  depsPromise.catch(() => undefined); // awaited (and reported) in after()
   let result;
   try {
-    result = await ingestWebhook({ store: deps.store, settings: deps.settings, expectedWabaId: env.META_WABA_ID }, payload);
+    result = await ingestWebhook({ store }, payload);
   } catch (e) {
     log.error("failed to record webhook", { error: e instanceof Error ? e.message : String(e) });
-    after(() => deps.store.flush());
+    after(() => store.flush());
     return new Response("Temporary failure", { status: 500 });
   }
 
-  // Always registered: status-only events still leave usage counters to flush.
   after(async () => {
+    // "typing…" first, so the customer sees a reaction within about a second.
+    const typing = Promise.all(
+      result.typing.map(async (t) => {
+        try {
+          await sender.markRead?.(t);
+        } catch (e) {
+          log.warn("typing indicator failed", { error: e instanceof Error ? e.message : String(e) });
+        }
+      }),
+    );
+    const base = await depsPromise;
+    // Replies wait for the typing call so it can never land after the answer.
+    const deps: PipelineDeps = {
+      ...base,
+      sender: {
+        send: async (input) => {
+          await typing;
+          return sender.send(input);
+        },
+        markRead: sender.markRead?.bind(sender),
+      },
+    };
     for (const id of result.conversations) {
       try {
         await processConversation(deps, id);
@@ -76,7 +101,8 @@ export async function POST(req: NextRequest) {
         log.error("conversation processing failed", { conversationId: id, error: e instanceof Error ? e.message : String(e) });
       }
     }
-    await deps.store.flush();
+    await typing;
+    await store.flush();
   });
   return Response.json({ ok: true, recorded: result.recorded, duplicates: result.duplicates, statuses: result.statuses });
 }

@@ -20,7 +20,7 @@ export function nodeSummary(
     case "send_media":
       return c.assetId ? `File: ${names.mediaNames[s(c.assetId)] ?? "selected file"}` : "No file selected yet";
     case "wait":
-      return `Wait ${waitLabel(c.amount, c.unit)}${c.essential ? " · essential" : ""}`;
+      return `Wait ${waitLabel(c.amount, c.unit)}`;
     case "ask_question":
       return `${s(c.question)} → saved as ${s(c.variable) || "?"}`;
     case "interactive":

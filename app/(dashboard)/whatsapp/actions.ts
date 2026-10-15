@@ -5,7 +5,6 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { audit, requireAdmin, runAction } from "@/lib/auth/guard";
 import { fetchPhoneNumberInfo } from "@/lib/whatsapp/graph";
-import { invalidateAccountCache } from "@/lib/server/supabase-store";
 
 const accountSchema = z.object({
   id: z.uuid().nullable(),
@@ -23,7 +22,6 @@ export async function saveAccountAction(input: z.input<typeof accountSchema>) {
     const row = { name: v.name, waba_id: v.wabaId, phone_number_id: v.phoneNumberId, enabled: v.enabled };
     const res = v.id ? await supabase.from("whatsapp_accounts").update(row).eq("id", v.id) : await supabase.from("whatsapp_accounts").insert(row);
     if (res.error) throw new Error(res.error.code === "23505" ? "This phone number ID is already registered." : res.error.message);
-    invalidateAccountCache();
     await audit(session, v.id ? "whatsapp_account.updated" : "whatsapp_account.created", { type: "whatsapp_account", id: v.id }, row);
     revalidatePath("/whatsapp");
   });
@@ -69,7 +67,6 @@ export async function deleteAccountAction(input: { id: string }) {
         error.code === "23503" ? "This number has conversation history, so it can't be removed. It stays disabled instead." : error.message,
       );
     }
-    invalidateAccountCache();
     await audit(session, "whatsapp_account.deleted", { type: "whatsapp_account", id }, { name: acc.name });
     revalidatePath("/whatsapp");
   });

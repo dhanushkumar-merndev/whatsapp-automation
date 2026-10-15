@@ -84,7 +84,8 @@ export interface ExecutionContext {
 }
 
 export type Awaiting =
-  | { kind: "input"; nodeId: string; questionNodeId: string }
+  /** `since`: when the question was sent; messages written before it are not taken as the answer. */
+  | { kind: "input"; nodeId: string; questionNodeId: string; since?: string }
   | { kind: "delay"; nodeId: string; jobId: string | null };
 
 export interface ExecutionRecord {
@@ -248,18 +249,6 @@ export interface CrmDeliveryRecord {
   isTest: boolean;
 }
 
-export type UsageService = "qstash" | "redis" | "whatsapp" | "crm" | "supabase_db" | "supabase_storage";
-export type UsageSource = "local_measured" | "provider" | "estimate";
-
-export interface UsageIncrement {
-  service: UsageService;
-  metric: string;
-  quantity?: number;
-  flowId?: string | null;
-  isTest?: boolean;
-  source?: UsageSource;
-}
-
 export interface NotificationInput {
   kind: string;
   severity: "info" | "warning" | "critical";
@@ -291,6 +280,8 @@ export interface MessageSender {
     message: OutboundMessage;
     asset?: MediaAssetRecord | null;
   }): Promise<{ waMessageId: string }>;
+  /** Marks a customer message as read and shows "typing…" until the next reply (max ~25 s). */
+  markRead?(input: { phoneNumberId: string; waMessageId: string }): Promise<void>;
 }
 
 export interface Scheduler {
@@ -358,8 +349,6 @@ export interface EngineStore {
   attachJobMessage(jobId: string, qstashMessageId: string | null): Promise<void>;
   finishScheduledJob(jobId: string, status: ScheduledJobStatus, error?: string | null): Promise<void>;
 
-  usageToday(service: UsageService, metric: string): Promise<number>;
-  incrementUsage(input: UsageIncrement): Promise<void>;
   notify(input: NotificationInput): Promise<void>;
 
   listCrmIntegrations(input: { enabledOnly: boolean; id?: string | null }): Promise<CrmIntegrationRecord[]>;
@@ -403,6 +392,11 @@ export interface EngineDeps {
   logger: EngineLogger;
   /** Simulation mode never sends live messages and never creates production leads. */
   mode: "live" | "simulation";
+  /**
+   * When set, short Wait steps pause inside the request instead of going through
+   * QStash. The budget is shared by every run in one request (function time limit).
+   */
+  inlineWait?: { sleep: (ms: number) => Promise<void>; budgetMs: number };
 }
 
 export const silentLogger: EngineLogger = { info() {}, warn() {}, error() {} };

@@ -16,20 +16,19 @@ import type {
   OutboundClaim,
   ScheduledJobRecord,
   ScheduledJobStatus,
-  UsageIncrement,
-  UsageService,
 } from "@/lib/engine/types";
 import { ACTIVE_EXECUTION_STATUSES, OPEN_LEAD_STATUSES } from "@/lib/engine/types";
 import type {
   AccountRecord,
   AppStore,
+  BeginTurnResult,
   FlowStatus,
   InboundProcessingStatus,
   InboundRecordInput,
   InboundRecordResult,
   PendingInbound,
   StatusUpdateInput,
-  TriggerCandidateRecord,
+  TurnState,
 } from "./types";
 
 /**
@@ -84,11 +83,13 @@ export class MemoryStore implements AppStore {
   leads = new Map<string, LeadRecord & { answers: Record<string, unknown> }>();
   jobs = new Map<string, ScheduledJobRecord & { idempotencyKey: string }>();
   media = new Map<string, MediaAssetRecord>();
-  usage = new Map<string, number>();
   notifications: (NotificationInput & { createdAt: string })[] = [];
   crmIntegrations = new Map<string, CrmIntegrationRecord>();
   crmDeliveries = new Map<string, CrmDeliveryRecord & { lastError?: string | null; nextAttemptAt?: string | null }>();
   securityEvents: { scope: string; identifier: string; contactId: string | null; createdAt: string }[] = [];
+  /** Mirrors app_settings.testPhoneNumbers, which the database checks when recording a message. */
+  testPhoneNumbers: string[] = [];
+  private tasks = new Set<Promise<unknown>>();
 
   constructor(private readonly now: () => Date = () => new Date()) {}
 
@@ -187,11 +188,14 @@ export class MemoryStore implements AppStore {
 
   // --- Inbound ------------------------------------------------------------------
 
-  async getAccountByPhoneNumberId(phoneNumberId: string) {
-    return [...this.accounts.values()].find((a) => a.phoneNumberId === phoneNumberId) ?? null;
-  }
-
   async recordInbound(input: InboundRecordInput): Promise<InboundRecordResult> {
+    const account = input.accountId
+      ? this.accounts.get(input.accountId)
+      : [...this.accounts.values()].find(
+          (a) => a.phoneNumberId === input.phoneNumberId && a.enabled && (!input.wabaId || a.wabaId === input.wabaId),
+        );
+    if (!account) return { ignored: "unknown_account" };
+    input = { ...input, accountId: account.id, isTest: input.isTest || this.testPhoneNumbers.includes(input.waId) };
     let contact = [...this.contacts.values()].find((c) => c.waId === input.waId);
     let newContact = false;
     if (!contact) {
@@ -212,13 +216,12 @@ export class MemoryStore implements AppStore {
     } else if (input.profileName) {
       contact.profileName = input.profileName;
     }
-    let conv = [...this.conversations.values()].find((c) => c.contactId === contact!.id && c.accountId === input.accountId);
-    const account = this.accounts.get(input.accountId)!;
+    let conv = [...this.conversations.values()].find((c) => c.contactId === contact!.id && c.accountId === account.id);
     if (!conv) {
       conv = {
         id: uuid(),
         contactId: contact.id,
-        accountId: input.accountId,
+        accountId: account.id,
         phoneNumberId: account.phoneNumberId,
         status: "open",
         lastInboundAt: input.providerTimestamp,
@@ -230,8 +233,18 @@ export class MemoryStore implements AppStore {
     } else if (!conv.lastInboundAt || conv.lastInboundAt < input.providerTimestamp) {
       conv.lastInboundAt = input.providerTimestamp;
     }
+    const result = {
+      accountId: account.id,
+      contactId: contact.id,
+      conversationId: conv.id,
+      conversationStatus: conv.status,
+      optedOut: contact.optedOut,
+      cooldownUntil: contact.cooldownUntil,
+      isTest: input.isTest,
+      newContact,
+    };
     if (this.messages.some((m) => m.waMessageId === input.waMessageId)) {
-      return { contactId: contact.id, conversationId: conv.id, messageId: null, duplicate: true, newContact };
+      return { ...result, messageId: null, duplicate: true };
     }
     const msg: MemoryMessage = {
       id: uuid(),
@@ -254,7 +267,7 @@ export class MemoryStore implements AppStore {
       createdAt: this.iso(),
     };
     this.messages.push(msg);
-    return { contactId: contact.id, conversationId: conv.id, messageId: msg.id, duplicate: false, newContact };
+    return { ...result, messageId: msg.id, duplicate: false };
   }
 
   async applyStatus(input: StatusUpdateInput) {
@@ -274,6 +287,35 @@ export class MemoryStore implements AppStore {
     c.lockToken = token;
     c.lockExpiresAt = now + ttlSeconds * 1000;
     return true;
+  }
+
+  async beginTurn(conversationId: string, token: string, ttlSeconds: number, limit: number): Promise<BeginTurnResult> {
+    if (!(await this.acquireLock(conversationId, token, ttlSeconds))) return { locked: false };
+    return { locked: true, pending: await this.listPendingInbound(conversationId, limit), state: await this.getTurnState(conversationId) };
+  }
+
+  async getTurnState(conversationId: string): Promise<TurnState | null> {
+    const ctx = await this.getConversationContext(conversationId);
+    if (!ctx) return null;
+    const active = await this.getActiveExecution(conversationId);
+    const ended = [...this.executions.values()]
+      .filter((e) => e.conversationId === conversationId && e.completedAt && !ACTIVE_EXECUTION_STATUSES.includes(e.status))
+      .map((e) => e.completedAt!)
+      .sort();
+    const candidates = [...this.flows.values()]
+      .filter((f) => f.publishedVersionId && (f.status === "active" || (ctx.conversation.isTest && f.status === "testing")))
+      .map((f) => {
+        const v = this.versions.get(f.publishedVersionId!)!;
+        return { flowId: f.id, flowName: f.name, status: f.status, priority: f.priority, versionId: v.id, version: v.version };
+      });
+    return {
+      ...ctx,
+      active,
+      activeFlowStatus: active ? (this.flows.get(active.flowId)?.status ?? null) : null,
+      lastCompletedAt: ended.at(-1) ?? null,
+      candidates,
+      priorExecutions: [...this.executions.values()].filter((e) => e.contactId === ctx.contact.id).length,
+    };
   }
 
   async releaseLock(conversationId: string, token: string) {
@@ -340,27 +382,6 @@ export class MemoryStore implements AppStore {
 
   async getFlowStatus(flowId: string) {
     return this.flows.get(flowId)?.status ?? null;
-  }
-
-  async listTriggerCandidates(includeTesting: boolean): Promise<TriggerCandidateRecord[]> {
-    return [...this.flows.values()]
-      .filter((f) => f.publishedVersionId && (f.status === "active" || (includeTesting && f.status === "testing")))
-      .map((f) => {
-        const v = this.versions.get(f.publishedVersionId!)!;
-        return {
-          flowId: f.id,
-          flowName: f.name,
-          status: f.status,
-          priority: f.priority,
-          versionId: v.id,
-          version: v.version,
-          definition: clone(v.definition),
-        };
-      });
-  }
-
-  async countPriorExecutions(contactId: string) {
-    return [...this.executions.values()].filter((e) => e.contactId === contactId).length;
   }
 
   async setExecutionStatus(id: string, status: ExecutionStatus, error?: string | null) {
@@ -631,25 +652,21 @@ export class MemoryStore implements AppStore {
     }
   }
 
-  private usageKey(service: string, metric: string, day: string, isTest: boolean) {
-    return `${service}|${metric}|${day}|${isTest}`;
-  }
-
-  async usageToday(service: UsageService, metric: string) {
-    return this.usage.get(this.usageKey(service, metric, this.iso().slice(0, 10), false)) ?? 0;
-  }
-
-  async incrementUsage(input: UsageIncrement) {
-    const key = this.usageKey(input.service, input.metric, this.iso().slice(0, 10), input.isTest ?? false);
-    this.usage.set(key, (this.usage.get(key) ?? 0) + (input.quantity ?? 1));
-  }
-
   async notify(input: NotificationInput) {
     this.notifications.push({ ...input, createdAt: this.iso() });
   }
 
   /** Every write here is synchronous. */
-  async flush() {}
+  background(_what: string, task: () => Promise<unknown>) {
+    const p: Promise<unknown> = task()
+      .catch(() => undefined)
+      .finally(() => this.tasks.delete(p));
+    this.tasks.add(p);
+  }
+
+  async flush() {
+    while (this.tasks.size) await Promise.all([...this.tasks]);
+  }
 
   async listCrmIntegrations(input: { enabledOnly: boolean; id?: string | null }) {
     return [...this.crmIntegrations.values()]

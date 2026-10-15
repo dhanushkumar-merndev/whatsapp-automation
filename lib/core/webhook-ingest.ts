@@ -1,11 +1,11 @@
-import type { AppSettings } from "@/lib/settings/schema";
 import type { AppStore, InboundRecordInput } from "./types";
 
 /**
  * Parses a (signature-verified) Meta webhook payload and durably records it.
- * Only events for the configured WhatsApp Business Account and an enabled,
- * registered phone number are accepted. Status receipts update messages and
- * never start flows. Returns the conversations that need processing.
+ * Only messages for an enabled, registered phone number of a matching WhatsApp
+ * Business Account are accepted (checked by the database while recording).
+ * Status receipts update messages and never start flows. Returns the
+ * conversations that need processing.
  */
 
 type Json = Record<string, unknown>;
@@ -13,12 +13,17 @@ const obj = (v: unknown): Json => (v && typeof v === "object" && !Array.isArray(
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const str = (v: unknown): string | null => (typeof v === "string" && v.length > 0 ? v : null);
 
+/** Message types that are recorded but never drive automation. */
+export const NON_ACTIONABLE_TYPES = new Set(["reaction", "system", "unsupported", "ephemeral", "errors", "unknown"]);
+
 export interface IngestResult {
   conversations: string[];
   recorded: number;
   duplicates: number;
   statuses: number;
   ignored: number;
+  /** New customer messages the bot will answer: mark read + show "typing…" right away. */
+  typing: { phoneNumberId: string; waMessageId: string }[];
 }
 
 export function extractInbound(m: Json): { type: string; body: string | null; payload: Json } {
@@ -75,28 +80,22 @@ export function extractInbound(m: Json): { type: string; body: string | null; pa
   return { type, body: body ? body.slice(0, 4096) : null, payload };
 }
 
-export async function ingestWebhook(
-  deps: { store: AppStore; settings: AppSettings; expectedWabaId: string },
-  payload: unknown,
-): Promise<IngestResult> {
-  const result: IngestResult = { conversations: [], recorded: 0, duplicates: 0, statuses: 0, ignored: 0 };
+export async function ingestWebhook(deps: { store: AppStore; now?: () => Date }, payload: unknown): Promise<IngestResult> {
+  const result: IngestResult = { conversations: [], recorded: 0, duplicates: 0, statuses: 0, ignored: 0, typing: [] };
   const root = obj(payload);
   if (root.object !== "whatsapp_business_account") return result;
   const conversations = new Set<string>();
+  const now = (deps.now ?? (() => new Date()))().getTime();
 
   for (const entryRaw of arr(root.entry)) {
     const entry = obj(entryRaw);
-    if (str(entry.id) !== deps.expectedWabaId) {
-      result.ignored++;
-      continue;
-    }
+    const wabaId = str(entry.id);
     for (const changeRaw of arr(entry.changes)) {
       const change = obj(changeRaw);
       if (change.field !== "messages") continue;
       const value = obj(change.value);
       const phoneNumberId = str(obj(value.metadata).phone_number_id);
-      const account = phoneNumberId ? await deps.store.getAccountByPhoneNumberId(phoneNumberId) : null;
-      if (!account || !account.enabled || account.wabaId !== deps.expectedWabaId) {
+      if (!wabaId || !phoneNumberId) {
         result.ignored++;
         continue;
       }
@@ -119,7 +118,8 @@ export async function ingestWebhook(
         }
         const { type, body, payload: extra } = extractInbound(m);
         const input: InboundRecordInput = {
-          accountId: account.id,
+          phoneNumberId,
+          wabaId,
           waId: from,
           profileName: profiles.get(from) ?? null,
           waMessageId: id,
@@ -127,14 +127,23 @@ export async function ingestWebhook(
           body,
           payload: extra,
           providerTimestamp: new Date(Number.isFinite(ts) && ts > 0 ? ts * 1000 : Date.now()).toISOString(),
-          isTest: deps.settings.testPhoneNumbers.includes(from),
+          isTest: false,
         };
         const r = await deps.store.recordInbound(input);
+        if (r.ignored) {
+          result.ignored++;
+          continue;
+        }
         if (r.duplicate) {
           result.duplicates++;
         } else {
           result.recorded++;
-          await deps.store.incrementUsage({ service: "whatsapp", metric: "messages_received", isTest: input.isTest });
+          const automated =
+            !NON_ACTIONABLE_TYPES.has(type) &&
+            r.conversationStatus !== "handoff" &&
+            !r.optedOut &&
+            !(r.cooldownUntil && new Date(r.cooldownUntil).getTime() > now);
+          if (automated) result.typing.push({ phoneNumberId, waMessageId: id });
         }
         conversations.add(r.conversationId);
       }
@@ -154,9 +163,6 @@ export async function ingestWebhook(
           category: str(pricing.category),
           model: str(pricing.pricing_model),
         });
-        if (status === "delivered" && pricing.billable === true) {
-          await deps.store.incrementUsage({ service: "whatsapp", metric: "billable_messages", source: "provider" });
-        }
         result.statuses++;
       }
     }

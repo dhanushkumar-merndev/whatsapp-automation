@@ -81,7 +81,7 @@ export function MediaCardActions({ id, name }: { id: string; name: string }) {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Rename file</DialogTitle>
-            <DialogDescription>This name is shown in the Flow Builder. Customers see the file name set on the Send media step.</DialogDescription>
+            <DialogDescription>This name is shown in the workflow editor. Customers see the file name set on the Send media step.</DialogDescription>
           </DialogHeader>
           <form
             onSubmit={(e) => {

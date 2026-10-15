@@ -2,8 +2,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   AlertTriangle,
-  CalendarClock,
-  Database,
   Inbox,
   MessageCircle,
   MessagesSquare,
@@ -14,7 +12,7 @@ import {
   Users,
   Webhook,
   Workflow,
-  IndianRupee,
+  Receipt,
 } from "lucide-react";
 import { PageHeader } from "@/components/common/page-header";
 import { StatCard } from "@/components/common/stat-card";
@@ -25,7 +23,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { requirePageSession } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { overviewMetrics } from "@/lib/server/metrics";
-import { fmtAgo, fmtMoney, fmtNumber, fmtPhone } from "@/lib/format";
+import { fmtAgo, fmtNumber, fmtPhone } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Overview" };
 
@@ -50,9 +48,6 @@ export default async function OverviewPage({ searchParams }: PageProps<"/overvie
       .order("created_at", { ascending: false })
       .limit(6),
   ]);
-
-  const qstashPct = m.qstashLimit ? m.qstashToday.value / m.qstashLimit : null;
-  const redisPct = m.redisLimit ? m.redisMonth.value / m.redisLimit : null;
 
   return (
     <>
@@ -102,7 +97,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/overvie
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard label="Messages received" value={fmtNumber(m.received)} sub={`last ${days} days`} icon={Inbox} />
             <StatCard label="Messages sent" value={fmtNumber(m.sent)} sub={`last ${days} days`} icon={Send} />
-            <StatCard label="Flows running" value={fmtNumber(m.flowsActive)} sub={`${fmtNumber(m.inProgress)} conversations in progress`} icon={Workflow} href="/flows" />
+            <StatCard label="Live workflows" value={fmtNumber(m.flowsActive)} sub={`${fmtNumber(m.inProgress)} conversations in progress`} icon={Workflow} href="/flows" />
             <StatCard
               label="Automation errors"
               value={fmtNumber(m.errors)}
@@ -114,7 +109,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/overvie
           </div>
         </section>
         <section>
-          <h2 className="mb-2.5 text-sm font-medium text-muted-foreground">Usage & cost</h2>
+          <h2 className="mb-2.5 text-sm font-medium text-muted-foreground">Integrations</h2>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard
               label="CRM sync"
@@ -124,31 +119,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/overvie
               href="/leads?view=crm_failed"
               tone={m.crm.failed > 0 ? "warning" : "default"}
             />
-            <StatCard
-              label="QStash usage today"
-              value={fmtNumber(m.qstashToday.value)}
-              sub={m.qstashLimit ? `of ${fmtNumber(m.qstashLimit)} / day (${Math.round((qstashPct ?? 0) * 100)}%)` : "no allowance set"}
-              icon={CalendarClock}
-              source={m.qstashToday.source === "unavailable" ? "local_measured" : m.qstashToday.source}
-              href="/usage"
-              tone={qstashPct !== null && qstashPct >= 0.85 ? "warning" : "default"}
-            />
-            <StatCard
-              label="Redis usage this month"
-              value={fmtNumber(m.redisMonth.value)}
-              sub={m.redisLimit ? `of ${fmtNumber(m.redisLimit)} commands (${Math.round((redisPct ?? 0) * 100)}%)` : undefined}
-              icon={Database}
-              source={m.redisMonth.source === "unavailable" ? "estimate" : m.redisMonth.source}
-              href="/usage"
-            />
-            <StatCard
-              label="Est. WhatsApp cost (month)"
-              value={m.meta.estimatedCost === null ? "Unavailable" : fmtMoney(m.meta.estimatedCost, m.meta.rate?.currency ?? "USD")}
-              sub={`${fmtNumber(m.meta.billable)} billable messages reported by Meta`}
-              icon={IndianRupee}
-              source={m.meta.rate ? "manual" : "unavailable"}
-              href="/usage"
-            />
+            <StatCard label="Billable WhatsApp messages" value={fmtNumber(m.billable)} sub="this month, as reported by Meta" icon={Receipt} />
           </div>
         </section>
       </div>

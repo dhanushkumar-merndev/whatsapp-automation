@@ -55,7 +55,7 @@ export function buildRealEstateFlowDefinition(): FlowDefinition {
       matchMode: "contains",
       customerType: "any",
     }),
-    node("re_wait", "wait", "Pause 5 seconds", 0, step, { amount: 5, unit: "seconds", essential: false }),
+    node("re_wait", "wait", "Pause 5 seconds", 0, step, { amount: 5, unit: "seconds" }),
     node("re_answer", "interactive", "Answer + offer a call", 0, step * 2, {
       body:
         "Great question! 🏡✨\n\n" +

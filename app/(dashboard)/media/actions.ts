@@ -1,11 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { audit, requireAdmin, runAction } from "@/lib/auth/guard";
 import { isAllowedMime, MEDIA_RULES, sanitizeFileName, sniffMime } from "@/lib/media/validate";
+import { preuploadMedia } from "@/lib/whatsapp/graph";
 
 const limits = { prefix: "media_write", tokens: 30, windowSeconds: 600 };
 
@@ -56,6 +58,8 @@ export async function finalizeUploadAction(input: { assetId: string }) {
     const checksum = createHash("sha256").update(bytes).digest("hex");
     await admin.from("media_assets").update({ status: "ready", size_bytes: bytes.length, checksum_sha256: checksum }).eq("id", assetId);
     await audit(session, "media.uploaded", { type: "media_asset", id: assetId }, { name: asset.name, size: bytes.length });
+    // Hand the file to Meta now, so the first customer who gets it doesn't wait for an upload.
+    after(() => preuploadMedia({ assetId }).catch((e) => console.warn("[media] pre-upload failed", e instanceof Error ? e.message : e)));
     revalidatePath("/media");
   });
 }

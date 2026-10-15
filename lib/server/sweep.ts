@@ -3,24 +3,14 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { processConversation, type PipelineDeps } from "@/lib/core/process-conversation";
 import { handleScheduledJob } from "@/lib/core/jobs";
 import { attemptCrmDelivery } from "@/lib/engine/crm-attempt";
-import { fetchUpstashRedisStats } from "@/lib/usage/providers";
+import { preuploadMedia } from "@/lib/whatsapp/graph";
 import { toIntegration } from "./supabase-store";
 
 type Report = Record<string, number | string>;
 
-async function setUsage(service: string, metric: string, day: string, source: string, quantity: number) {
-  const admin = createAdminClient();
-  await admin
-    .from("usage_records")
-    .upsert(
-      { service, metric, period_start: day, source, flow_id: null, is_test: false, quantity, updated_at: new Date().toISOString() },
-      { onConflict: "service,metric,period_start,source,flow_id,is_test" },
-    );
-}
-
 /**
  * Daily maintenance (Vercel Cron). Safety net for anything a crashed function
- * left behind, plus retention and usage snapshots. Every step is idempotent.
+ * left behind, plus retention clean-up. Every step is idempotent.
  */
 export async function runSweep(deps: PipelineDeps): Promise<Report> {
   const admin = createAdminClient();
@@ -50,7 +40,7 @@ export async function runSweep(deps: PipelineDeps): Promise<Report> {
   for (const j of lateJobs ?? []) await handleScheduledJob(deps, j.id, { retried: 0, lockWaitMs: 2000 });
   report.recoveredJobs = lateJobs?.length ?? 0;
 
-  // 3. CRM deliveries deferred by the usage cap or left without a pending retry job.
+  // 3. CRM deliveries deferred or left without a pending retry job.
   const { data: deliveries } = await admin
     .from("crm_deliveries")
     .select("*, crm_integrations(*)")
@@ -113,20 +103,12 @@ export async function runSweep(deps: PipelineDeps): Promise<Report> {
   }
   report.cleanedUploads = pendingUploads?.length ?? 0;
 
-  // 7. Usage snapshots: measured storage + provider-reported Redis commands when available.
-  const day = new Date().toISOString().slice(0, 10);
-  const { data: storage } = await admin.rpc("get_storage_usage");
-  if (storage) {
-    const s = storage as { database_bytes: number; media_bytes: number };
-    await setUsage("supabase_db", "database_bytes", day, "local_measured", Number(s.database_bytes));
-    await setUsage("supabase_storage", "media_bytes", day, "local_measured", Number(s.media_bytes));
+  // 7. Keep media uploaded to Meta (their copies expire after 30 days).
+  try {
+    report.mediaPreuploaded = await preuploadMedia();
+  } catch (e) {
+    report.mediaPreuploaded = `failed: ${e instanceof Error ? e.message : String(e)}`;
   }
-  const redis = await fetchUpstashRedisStats();
-  if (redis) {
-    for (const d of redis.dailyCommands.slice(-35)) await setUsage("redis", "commands", d.day, "provider", d.count);
-    report.redisProviderStats = "updated";
-  } else {
-    report.redisProviderStats = "not_configured";
-  }
+
   return report;
 }

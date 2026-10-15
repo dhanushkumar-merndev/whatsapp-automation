@@ -23,11 +23,6 @@ export async function handleScheduledJob(
   opts: { retried: number; lockWaitMs?: number } = { retried: 0 },
 ): Promise<JobOutcome> {
   const { store } = deps;
-  if (opts.retried > 0) {
-    // Every QStash retry is an additional billable delivery.
-    await store.incrementUsage({ service: "qstash", metric: "deliveries" });
-    await store.incrementUsage({ service: "qstash", metric: "retries" });
-  }
   const job = await store.getScheduledJob(jobId);
   if (!job) return { status: "skipped", detail: "unknown_job" };
   if (job.status !== "scheduled" && job.status !== "running") return { status: "skipped", detail: `job_${job.status}` };

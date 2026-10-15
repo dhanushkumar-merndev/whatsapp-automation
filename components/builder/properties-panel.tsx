@@ -359,17 +359,11 @@ function NodeForm({
           />
           {seconds > 24 * 3600 ? (
             <Note tone="warning">Longer than 24 hours: WhatsApp’s reply window will have closed, so the next message can’t be sent.</Note>
+          ) : seconds <= 20 ? (
+            <Note>Short waits happen instantly inside the reply, and the customer sees “typing…” meanwhile.</Note>
           ) : (
-            <Note>The next step runs after this delay. Each wait uses one QStash delivery.</Note>
+            <Note>The next step runs after this delay (scheduled with QStash).</Note>
           )}
-          <Advanced>
-            <SwitchField
-              label="Essential delay"
-              help="When the hard usage cap is reached, non-essential waits are skipped and the flow continues immediately."
-              checked={bool("essential")}
-              onChange={(v) => set({ essential: v })}
-            />
-          </Advanced>
         </div>
       );
     }

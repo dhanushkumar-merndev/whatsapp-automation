@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createHarness } from "../helpers/harness";
 import { validateFlow } from "@/lib/engine/validate-graph";
-import { buildRealEstateFlowDefinition, REAL_ESTATE_FLOW_NAME, REAL_ESTATE_FLOW_PRIORITY } from "@/lib/flows/real-estate-flow";
+import { buildRealEstateFlowDefinition, REAL_ESTATE_FLOW_NAME, REAL_ESTATE_FLOW_PRIORITY } from "../fixtures/real-estate-flow";
 
 const QUESTIONS = [
   "Will you generate leads, handle calls, and convert prospects into site visit bookings?",

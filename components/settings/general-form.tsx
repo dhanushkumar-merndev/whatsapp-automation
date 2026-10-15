@@ -9,7 +9,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { findTelegramChatsAction, sendTelegramTestAction, updateSettingsAction } from "@/app/(dashboard)/settings/actions";
 import type { AppSettings } from "@/lib/settings/schema";
@@ -149,8 +148,6 @@ export function GeneralSettingsForm({ initial, telegramTokenSet }: { initial: Ap
         execution: s.execution,
         rateLimits: s.rateLimits,
         retention: s.retention,
-        hosting: s.hosting,
-        estimator: s.estimator,
         telegram: s.telegram,
       });
       if (r.ok) {
@@ -248,46 +245,6 @@ export function GeneralSettingsForm({ initial, telegramTokenSet }: { initial: Ap
           <Num label="Redact message text after (days)" value={s.retention.messageBodyDays} onChange={(n) => setS({ ...s, retention: { ...s.retention, messageBodyDays: n } })} />
           <Num label="Delete step logs after (days)" value={s.retention.executionLogDays} onChange={(n) => setS({ ...s, retention: { ...s.retention, executionLogDays: n } })} />
           <Num label="Delete security events after (days)" value={s.retention.securityEventDays} onChange={(n) => setS({ ...s, retention: { ...s.retention, securityEventDays: n } })} />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Hosting & estimator defaults</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-3">
-          <div className="space-y-1">
-            <Label className="text-xs">Vercel plan</Label>
-            <Select value={s.hosting.plan} onValueChange={(v) => setS({ ...s, hosting: { ...s.hosting, plan: v as AppSettings["hosting"]["plan"] } })}>
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="hobby">Hobby (non-commercial)</SelectItem>
-                <SelectItem value="pro">Pro</SelectItem>
-                <SelectItem value="enterprise">Enterprise</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Environment</Label>
-            <Select value={s.hosting.environment} onValueChange={(v) => setS({ ...s, hosting: { ...s.hosting, environment: v as AppSettings["hosting"]["environment"] } })}>
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="development">Development / testing</SelectItem>
-                <SelectItem value="production">Commercial production</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Meta pricing country</Label>
-            <Input value={s.estimator.metaCountryCode} maxLength={4} onChange={(e) => setS({ ...s, estimator: { ...s.estimator, metaCountryCode: e.target.value.toUpperCase() } })} />
-          </div>
-          <Num label="Default customers / day" value={s.estimator.customersPerDay} onChange={(n) => setS({ ...s, estimator: { ...s.estimator, customersPerDay: n } })} />
-          <Num label="Default completion rate (%)" value={Math.round(s.estimator.completionRate * 100)} onChange={(n) => setS({ ...s, estimator: { ...s.estimator, completionRate: Math.min(1, Math.max(0, n / 100)) } })} />
-          <Num label="DB size per conversation (KB)" value={s.estimator.dbKbPerConversation} onChange={(n) => setS({ ...s, estimator: { ...s.estimator, dbKbPerConversation: n } })} />
         </CardContent>
       </Card>
 

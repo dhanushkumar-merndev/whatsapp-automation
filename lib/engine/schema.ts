@@ -59,8 +59,6 @@ export const sendMediaConfig = z.object({
 export const waitConfig = z.object({
   amount: z.number().int().min(1).max(7 * 24 * 3600),
   unit: z.enum(["seconds", "minutes", "hours"]).default("seconds"),
-  /** Essential delays are still scheduled when the hard usage cap is reached. */
-  essential: z.boolean().default(false),
 });
 
 export const askQuestionConfig = z.object({

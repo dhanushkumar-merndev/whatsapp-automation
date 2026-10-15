@@ -2,10 +2,13 @@ import "server-only";
 import { serverEnv } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { SendError, type MediaAssetRecord, type MessageSender, type OutboundMessage } from "@/lib/engine/types";
+import { toMedia } from "@/lib/server/supabase-store";
 import { buildMessagePayload, classifyMetaError } from "./payload";
 
 const GRAPH = "https://graph.facebook.com";
 const MEDIA_ID_TTL_MS = 29 * 24 * 3600 * 1000; // Meta keeps uploaded media for 30 days
+/** Pre-uploads are refreshed well before Meta expires them, so sends never upload. */
+const MEDIA_REFRESH_AFTER_MS = 20 * 24 * 3600 * 1000;
 
 interface GraphError {
   error?: { message?: string; code?: number; error_subcode?: number; fbtrace_id?: string; error_data?: { details?: string } };
@@ -53,8 +56,12 @@ async function graphFetch(path: string, init: RequestInit & { json?: unknown }, 
   throw lastError ?? new SendError("WhatsApp API request failed");
 }
 
-/** Uploads a private Supabase Storage file to Meta and caches the media id (no public URL needed). */
-async function ensureMetaMediaId(asset: MediaAssetRecord, phoneNumberId: string): Promise<string> {
+/**
+ * Uploads a private Supabase Storage file to Meta and caches the media id (no
+ * public URL needed). Called ahead of time (on upload and by the daily sweep)
+ * so a customer never waits for an upload.
+ */
+export async function ensureMetaMediaId(asset: MediaAssetRecord, phoneNumberId: string): Promise<string> {
   const fresh =
     asset.metaMediaId &&
     asset.metaPhoneNumberId === phoneNumberId &&
@@ -79,6 +86,39 @@ async function ensureMetaMediaId(asset: MediaAssetRecord, phoneNumberId: string)
   return id;
 }
 
+/**
+ * Uploads ready media to Meta ahead of time for the current WhatsApp number
+ * (one asset after an upload, or every stale one from the daily sweep).
+ * Returns how many files were uploaded.
+ */
+export async function preuploadMedia(opts: { assetId?: string } = {}): Promise<number> {
+  const admin = createAdminClient();
+  const { data: account } = await admin
+    .from("whatsapp_accounts")
+    .select("phone_number_id")
+    .eq("enabled", true)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!account) return 0;
+  let q = admin.from("media_assets").select("*").eq("status", "ready").is("deleted_at", null);
+  if (opts.assetId) q = q.eq("id", opts.assetId);
+  const { data: rows, error } = await q;
+  if (error) throw new Error(`load media: ${error.message}`);
+  let uploaded = 0;
+  for (const asset of (rows ?? []).map(toMedia)) {
+    const fresh =
+      asset.metaMediaId &&
+      asset.metaPhoneNumberId === account.phone_number_id &&
+      asset.metaMediaUploadedAt &&
+      Date.now() - new Date(asset.metaMediaUploadedAt).getTime() < MEDIA_REFRESH_AFTER_MS;
+    if (fresh) continue;
+    await ensureMetaMediaId({ ...asset, metaMediaId: null }, account.phone_number_id);
+    uploaded++;
+  }
+  return uploaded;
+}
+
 /** Sends messages through the official WhatsApp Cloud API. */
 export class MetaSender implements MessageSender {
   async send(input: { to: string; phoneNumberId: string; message: OutboundMessage; asset?: MediaAssetRecord | null }) {
@@ -92,6 +132,17 @@ export class MetaSender implements MessageSender {
     const id = (res.messages as { id?: string }[] | undefined)?.[0]?.id;
     if (!id) throw new SendError("WhatsApp API returned no message id");
     return { waMessageId: id };
+  }
+
+  async markRead(input: { phoneNumberId: string; waMessageId: string }) {
+    await graphFetch(
+      `${input.phoneNumberId}/messages`,
+      {
+        method: "POST",
+        json: { messaging_product: "whatsapp", status: "read", message_id: input.waMessageId, typing_indicator: { type: "text" } },
+      },
+      1,
+    );
   }
 }
 

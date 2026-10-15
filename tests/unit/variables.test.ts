@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { definedVariableNames, listAnswerVariables, listFlowVariables } from "@/lib/engine/variables";
-import { buildDefaultFlowDefinition } from "@/lib/flows/default-flow";
+import { buildDefaultFlowDefinition } from "../fixtures/star-flow";
 import type { FlowNode } from "@/lib/engine/schema";
 
 const node = (id: string, type: FlowNode["type"], label: string, config: Record<string, unknown>): FlowNode => ({

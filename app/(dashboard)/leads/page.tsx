@@ -13,7 +13,6 @@ import { requirePageSession } from "@/lib/auth/guard";
 import { roleAllows } from "@/lib/auth/steps";
 import { createClient } from "@/lib/supabase/server";
 import { LEAD_VIEWS, fetchLeads, parseLeadFilters, type LeadView } from "@/lib/server/lead-query";
-import { STAR_SERVICES } from "@/lib/flows/default-flow";
 import { fmtAgo, fmtNumber, fmtPhone } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Leads" };
@@ -32,7 +31,7 @@ export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
     supabase.from("leads").select("service").not("service", "is", null).limit(500),
   ]);
   const staffMap = new Map((staff ?? []).map((s) => [s.id, s.full_name || s.email]));
-  const services = [...new Set([...STAR_SERVICES.map((s) => s.title), ...(serviceRows ?? []).map((r) => r.service as string)])];
+  const services = [...new Set((serviceRows ?? []).map((r) => r.service as string))].sort();
   const total = count ?? 0;
   const filtered = ["q", "service", "assigned", "from", "to"].some((k) => typeof sp[k] === "string" && sp[k]) || filters.view !== "all";
   const qs = (patch: Record<string, string>) => {

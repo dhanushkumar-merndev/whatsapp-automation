@@ -8,17 +8,16 @@ export function crmBackoffSeconds(attempt: number): number {
 /**
  * Attempt one CRM delivery and record the outcome. The lead is already saved
  * locally, so a failure here never loses it: retryable failures are queued
- * via QStash (or deferred to the daily sweep when the usage cap is reached).
+ * via QStash (or deferred to the daily sweep if scheduling fails).
  */
 export async function attemptCrmDelivery(
-  deps: Pick<EngineDeps, "store" | "crm" | "scheduler" | "settings" | "now" | "logger">,
+  deps: Pick<EngineDeps, "store" | "crm" | "scheduler" | "now" | "logger">,
   integration: CrmIntegrationRecord,
   delivery: CrmDeliveryRecord,
 ): Promise<"succeeded" | "retrying" | "deferred" | "failed"> {
   const { store } = deps;
   const attempts = delivery.attempts + 1;
   const result = await deps.crm.deliver(integration, delivery);
-  await store.incrementUsage({ service: "crm", metric: "deliveries", isTest: delivery.isTest });
 
   if (result.ok) {
     const at = deps.now().toISOString();
@@ -62,24 +61,6 @@ export async function attemptCrmDelivery(
 
   const delay = crmBackoffSeconds(attempts);
   const nextAt = new Date(deps.now().getTime() + delay * 1000).toISOString();
-  const capped =
-    deps.settings.usage.hardCapEnabled &&
-    (await store.usageToday("qstash", "deliveries")) >= deps.settings.usage.qstashDailyBudget;
-
-  if (capped) {
-    // Non-essential job: defer to the daily sweep / manual retry instead of spending QStash budget.
-    await store.updateCrmDelivery(delivery.id, {
-      status: "deferred",
-      attempts,
-      last_status_code: result.statusCode,
-      last_error: result.error,
-      response_excerpt: result.responseExcerpt,
-      next_attempt_at: nextAt,
-    });
-    await store.setLeadCrmStatus(delivery.leadId, "pending");
-    return "deferred";
-  }
-
   const { job, created } = await store.createScheduledJob({
     kind: "crm_retry",
     executionId: null,
@@ -95,7 +76,6 @@ export async function attemptCrmDelivery(
     try {
       const { messageId } = await deps.scheduler.schedule({ jobId: job.id, delaySeconds: delay });
       await store.attachJobMessage(job.id, messageId);
-      await store.incrementUsage({ service: "qstash", metric: "deliveries", isTest: delivery.isTest });
     } catch (e) {
       deps.logger.error("crm retry scheduling failed", { deliveryId: delivery.id, error: String(e) });
       await store.finishScheduledJob(job.id, "failed", "schedule_failed");

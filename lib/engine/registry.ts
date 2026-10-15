@@ -75,7 +75,7 @@ export const NODE_REGISTRY: { [K in NodeType]: NodeDefinition<K> } = {
     outputs: OUT,
     sends: false,
     waitsForInput: false,
-    defaults: () => ({ amount: 5, unit: "seconds", essential: false }),
+    defaults: () => ({ amount: 5, unit: "seconds" }),
   },
   ask_question: {
     type: "ask_question",

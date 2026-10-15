@@ -6,11 +6,13 @@ import { handleScheduledJob } from "@/lib/core/jobs";
 import { MemoryLimiter } from "@/lib/ratelimit";
 import { parseSettings, type AppSettings } from "@/lib/settings/schema";
 import { silentLogger } from "@/lib/engine/types";
-import { buildDefaultFlowDefinition } from "@/lib/flows/default-flow";
+import { buildDefaultFlowDefinition } from "../fixtures/star-flow";
 import type { FlowDefinition } from "@/lib/engine/schema";
 import { metaInboundPayload, type InboundSpec } from "./meta";
 
-export function createHarness(opts: { settings?: Partial<AppSettings>; definition?: FlowDefinition; withBrochure?: boolean } = {}) {
+export function createHarness(
+  opts: { settings?: Partial<AppSettings>; definition?: FlowDefinition; withBrochure?: boolean; inlineWaits?: boolean } = {},
+) {
   let now = new Date("2026-10-14T10:00:00Z");
   const clock = {
     now: () => now,
@@ -27,6 +29,7 @@ export function createHarness(opts: { settings?: Partial<AppSettings>; definitio
   const scheduler = new RecordingScheduler();
   const crm = new FakeCrm();
   const settings = parseSettings(opts.settings ?? {});
+  store.testPhoneNumbers = settings.testPhoneNumbers;
   const deps: PipelineDeps = {
     store,
     sender,
@@ -37,11 +40,15 @@ export function createHarness(opts: { settings?: Partial<AppSettings>; definitio
     logger: silentLogger,
     mode: "live",
     limiter: new MemoryLimiter(() => clock.now().getTime()),
+    // Short waits "sleep" by moving the fake clock, like production does in real time.
+    ...(opts.inlineWaits ? { inlineWait: { sleep: async (ms: number) => clock.advance(ms / 1000), budgetMs: 25_000 } } : {}),
   };
   const ran = new Set<string>();
 
   async function deliver(payload: unknown) {
-    const result = await ingestWebhook({ store, settings, expectedWabaId: "WABA1" }, payload);
+    const result = await ingestWebhook({ store, now: clock.now }, payload);
+    // Each delivery is its own request with its own in-request wait budget.
+    if (deps.inlineWait) deps.inlineWait.budgetMs = 25_000;
     for (const c of result.conversations) await processConversation(deps, c);
     return result;
   }

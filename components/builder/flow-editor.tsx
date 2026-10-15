@@ -58,7 +58,6 @@ import { useConfirm } from "@/components/common/confirm-dialog";
 import { NODE_REGISTRY } from "@/lib/engine/registry";
 import type { FlowDefinition, NodeType } from "@/lib/engine/schema";
 import { validateFlow } from "@/lib/engine/validate-graph";
-import { estimateFlow, type EstimatorAssumptions, type PlanContext } from "@/lib/estimator/estimate";
 import type { AppSettings } from "@/lib/settings/schema";
 import { cn } from "@/lib/utils";
 import { duplicateFlowAction, saveDraftAction, setFlowStatusAction, updateFlowDetailsAction } from "@/app/(dashboard)/flows/actions";
@@ -84,7 +83,6 @@ import { InsertEdge } from "./insert-edge";
 import { DRAG_MIME, Palette } from "./palette";
 import { PropertiesPanel } from "./properties-panel";
 import { FlowChecklist } from "./flow-checklist";
-import { EstimatorPanel } from "./estimator-panel";
 import { ValidationList } from "./validation-list";
 import { Simulator } from "./simulator";
 import { PublishDialog } from "./publish-dialog";
@@ -98,7 +96,6 @@ export interface FlowEditorProps {
     name: string;
     description: string | null;
     status: "draft" | "testing" | "active" | "paused" | "archived";
-    priority: number;
     draftDefinition: FlowDefinition;
     draftUpdatedAt: string;
     publishedVersionId: string | null;
@@ -107,18 +104,15 @@ export interface FlowEditorProps {
   versions: VersionItem[];
   media: MediaOption[];
   crm: CrmOption[];
-  plan: PlanContext;
-  defaultAssumptions: EstimatorAssumptions;
   settings: AppSettings;
 }
 
 const nodeTypes = { flowNode: FlowNode };
 const edgeTypes = { [EDGE_TYPE]: InsertEdge };
-const ASSUMPTIONS_KEY = (flowId: string) => `sgh:estimator:${flowId}`;
 /** Autosave waits this long after the last change (drafts are rate limited per minute). */
 const AUTOSAVE_MS = 2000;
 
-type PanelTab = "edit" | "issues" | "usage" | "test";
+type PanelTab = "edit" | "issues" | "test";
 
 function stripForKey(def: FlowDefinition, withPositions: boolean) {
   return JSON.stringify(withPositions ? def : { nodes: def.nodes.map((n) => ({ ...n, position: undefined })), edges: def.edges });
@@ -144,7 +138,7 @@ export function FlowEditor(props: FlowEditorProps) {
   );
 }
 
-function EditorInner({ flow, versions, media, crm, plan, defaultAssumptions, settings }: FlowEditorProps) {
+function EditorInner({ flow, versions, media, crm, settings }: FlowEditorProps) {
   const { resolvedTheme } = useTheme();
   const router = useRouter();
   const confirm = useConfirm();
@@ -163,14 +157,6 @@ function EditorInner({ flow, versions, media, crm, plan, defaultAssumptions, set
   const [tested, setTested] = useState(false);
   const [dropPicker, setDropPicker] = useState<{ left: number; top: number; flow: { x: number; y: number }; source: string; handle: string } | null>(null);
   const [statusPending, startStatus] = useTransition();
-  // Per-flow estimator assumptions are remembered in this browser only (client-only component).
-  const [assumptions, setAssumptions] = useState<EstimatorAssumptions>(() => {
-    try {
-      const raw = localStorage.getItem(ASSUMPTIONS_KEY(flow.id));
-      if (raw) return { ...defaultAssumptions, ...JSON.parse(raw) };
-    } catch {}
-    return defaultAssumptions;
-  });
   const clipboard = useRef<{ nodes: EditorNode[]; edges: EditorEdge[] } | null>(null);
 
   // Latest graph for callbacks that must stay stable (canvas actions, autosave).
@@ -185,24 +171,13 @@ function EditorInner({ flow, versions, media, crm, plan, defaultAssumptions, set
   /** Set before an intentional reload so the unsaved-changes prompt is skipped. */
   const skipUnloadGuard = useRef(false);
 
-  const updateAssumptions = (a: EstimatorAssumptions) => {
-    setAssumptions(a);
-    try {
-      localStorage.setItem(ASSUMPTIONS_KEY(flow.id), JSON.stringify(a));
-    } catch {}
-  };
-
   const definition = useMemo(() => toDefinition(nodes, edges), [nodes, edges]);
   const fullKey = useMemo(() => stripForKey(definition, true), [definition]);
   const logicalKey = useMemo(() => stripForKey(definition, false), [definition]);
-  // Recompute validation/estimates only when the logic changes (not while dragging).
+  // Recompute validation only when the logic changes (not while dragging).
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const logicalDefinition = useMemo(() => definition, [logicalKey]);
   const validation = useMemo(() => validateFlow(logicalDefinition), [logicalDefinition]);
-  const report = useMemo(
-    () => estimateFlow({ flowName: name, definition: logicalDefinition, assumptions, plan }),
-    [logicalDefinition, assumptions, plan, name],
-  );
   const dirty = fullKey !== savedKey;
 
   // --- Autosave -------------------------------------------------------------------
@@ -525,7 +500,7 @@ function EditorInner({ flow, versions, media, crm, plan, defaultAssumptions, set
       setName(flow.name);
       return;
     }
-    const r = await updateFlowDetailsAction({ flowId: flow.id, name: trimmed, description: flow.description ?? "", priority: flow.priority });
+    const r = await updateFlowDetailsAction({ flowId: flow.id, name: trimmed, description: flow.description ?? "" });
     if (!r.ok) {
       toast.error(r.error);
       setName(flow.name);
@@ -670,7 +645,7 @@ function EditorInner({ flow, versions, media, crm, plan, defaultAssumptions, set
 
   const panel = (
     <Tabs value={tab} onValueChange={(v) => setTab(v as PanelTab)} className="flex min-h-0 flex-1 flex-col gap-0">
-      <TabsList className="m-3 mb-1 grid w-auto grid-cols-4">
+      <TabsList className="m-3 mb-1 grid w-auto grid-cols-3">
         <TabsTrigger value="edit">Edit</TabsTrigger>
         <TabsTrigger value="issues">
           Issues
@@ -680,7 +655,6 @@ function EditorInner({ flow, versions, media, crm, plan, defaultAssumptions, set
             </span>
           )}
         </TabsTrigger>
-        <TabsTrigger value="usage">Usage</TabsTrigger>
         <TabsTrigger value="test">Test</TabsTrigger>
       </TabsList>
       <TabsContent value="edit" className="min-h-0 flex-1">
@@ -716,11 +690,6 @@ function EditorInner({ flow, versions, media, crm, plan, defaultAssumptions, set
       <TabsContent value="issues" className="min-h-0 flex-1">
         <ScrollArea className="h-full">
           <ValidationList validation={validation} onSelect={selectNode} />
-        </ScrollArea>
-      </TabsContent>
-      <TabsContent value="usage" className="min-h-0 flex-1">
-        <ScrollArea className="h-full">
-          <EstimatorPanel assumptions={assumptions} onChange={updateAssumptions} report={report} />
         </ScrollArea>
       </TabsContent>
       <TabsContent value="test" className="min-h-0 flex-1">
@@ -938,7 +907,6 @@ function EditorInner({ flow, versions, media, crm, plan, defaultAssumptions, set
         flowId={flow.id}
         flowName={name}
         definition={definition}
-        assumptions={assumptions}
         hasTestNumbers={settings.testPhoneNumbers.length > 0}
         onPublished={() => {
           skipUnloadGuard.current = true;

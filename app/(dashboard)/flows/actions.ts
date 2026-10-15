@@ -9,32 +9,10 @@ import { audit, requireAdmin, runAction, type ActionResult } from "@/lib/auth/gu
 import { loadSettings } from "@/lib/settings/server";
 import { flowDefinitionSchema, type FlowDefinition } from "@/lib/engine/schema";
 import { validateFlow, type GraphValidation } from "@/lib/engine/validate-graph";
-import { estimateFlow, estimateSnapshot, type EstimateReport } from "@/lib/estimator/estimate";
-import { loadPlanContext } from "@/lib/estimator/plan-context";
-import { buildDefaultFlowDefinition, DEFAULT_FLOW_DESCRIPTION, DEFAULT_FLOW_NAME } from "@/lib/flows/default-flow";
 import { blankFlowDefinition } from "@/lib/flows/blank-flow";
-import {
-  buildRealEstateFlowDefinition,
-  REAL_ESTATE_FLOW_DESCRIPTION,
-  REAL_ESTATE_FLOW_NAME,
-  REAL_ESTATE_FLOW_PRIORITY,
-} from "@/lib/flows/real-estate-flow";
 import { qstashClient } from "@/lib/qstash";
 
 const uuid = z.uuid();
-
-export const assumptionsSchema = z.object({
-  customersPerDay: z.number().min(0).max(1_000_000),
-  completionRate: z.number().min(0).max(1),
-  dailyGrowthRate: z.number().min(-0.5).max(1),
-  validationRetriesPerQuestion: z.number().min(0).max(10),
-  qstashRetryRate: z.number().min(0).max(1),
-  averageMediaSizeMb: z.number().min(0).max(1000),
-  newMediaAssetsPerMonth: z.number().min(0).max(10000),
-  dbKbPerConversation: z.number().min(0).max(100000),
-  outgoingPerCustomerOverride: z.number().min(0).max(1000).nullable().optional(),
-  scheduledPerCustomerOverride: z.number().min(0).max(1000).nullable().optional(),
-});
 
 async function writeLimits() {
   const s = await loadSettings();
@@ -43,46 +21,21 @@ async function writeLimits() {
 
 // ---------------------------------------------------------------------------
 
-export type FlowTemplate = "blank" | "star_growth_hub" | "real_estate_ads";
-
-export async function createFlowAction(input: { name: string; template: FlowTemplate }) {
+export async function createFlowAction(input: { name: string }) {
   const result = await runAction(async () => {
     const s = await loadSettings();
     const session = await requireAdmin({
       limit: { prefix: "flow_create", tokens: s.rateLimits.flowCreatesPerHour, windowSeconds: 3600 },
     });
-    const template = z.enum(["blank", "star_growth_hub", "real_estate_ads"]).parse(input.template);
-    const defaultName = { blank: "Untitled flow", star_growth_hub: DEFAULT_FLOW_NAME, real_estate_ads: REAL_ESTATE_FLOW_NAME }[template];
-    const name = z.string().trim().min(1).max(120).parse(input.name || defaultName);
-    let definition: FlowDefinition = template === "real_estate_ads" ? buildRealEstateFlowDefinition() : blankFlowDefinition();
-    if (template === "star_growth_hub") {
-      const { data: brochure } = await createAdminClient()
-        .from("media_assets")
-        .select("id")
-        .eq("kind", "document")
-        .eq("status", "ready")
-        .is("deleted_at", null)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      definition = buildDefaultFlowDefinition(brochure?.id ?? null);
-    }
+    const name = z.string().trim().min(1).max(120).parse(input.name || "Untitled workflow");
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("flows")
-      .insert({
-        name,
-        description: template === "star_growth_hub" ? DEFAULT_FLOW_DESCRIPTION : template === "real_estate_ads" ? REAL_ESTATE_FLOW_DESCRIPTION : null,
-        // Keyword flows must outrank the catch-all enquiry flow.
-        ...(template === "real_estate_ads" ? { priority: REAL_ESTATE_FLOW_PRIORITY } : {}),
-        draft_definition: definition,
-        created_by: session.userId,
-        updated_by: session.userId,
-      })
+      .insert({ name, draft_definition: blankFlowDefinition(), created_by: session.userId, updated_by: session.userId })
       .select("id")
       .single();
     if (error) throw new Error(error.message);
-    await audit(session, "flow.created", { type: "flow", id: data.id }, { template });
+    await audit(session, "flow.created", { type: "flow", id: data.id });
     return data.id as string;
   });
   if (result.ok && result.data) redirect(`/flows/${result.data}`);
@@ -119,7 +72,7 @@ export async function saveDraftAction(input: {
   });
 }
 
-export async function updateFlowDetailsAction(input: { flowId: string; name: string; description: string; priority: number }) {
+export async function updateFlowDetailsAction(input: { flowId: string; name: string; description: string }) {
   return runAction(async () => {
     const session = await requireAdmin({ limit: await writeLimits() });
     const parsed = z
@@ -127,13 +80,12 @@ export async function updateFlowDetailsAction(input: { flowId: string; name: str
         flowId: uuid,
         name: z.string().trim().min(1).max(120),
         description: z.string().max(500),
-        priority: z.number().int().min(0).max(1000),
       })
       .parse(input);
     const supabase = await createClient();
     const { error } = await supabase
       .from("flows")
-      .update({ name: parsed.name, description: parsed.description || null, priority: parsed.priority, updated_by: session.userId })
+      .update({ name: parsed.name, description: parsed.description || null, updated_by: session.userId })
       .eq("id", parsed.flowId);
     if (error) throw new Error(error.message);
     await audit(session, "flow.updated", { type: "flow", id: parsed.flowId });
@@ -141,39 +93,19 @@ export async function updateFlowDetailsAction(input: { flowId: string; name: str
   });
 }
 
-async function buildPublishReport(flowId: string, flowName: string, definition: FlowDefinition, assumptions: z.infer<typeof assumptionsSchema>) {
-  const settings = await loadSettings();
-  const plan = await loadPlanContext(settings, flowId);
-  const validation = validateFlow(definition);
-  const report = estimateFlow({ flowName, definition, assumptions, plan });
-  return { validation, report };
-}
-
-/** Server-side (authoritative) validation + usage report shown before publishing. */
-export async function previewPublishAction(input: {
-  flowId: string;
-  definition: FlowDefinition;
-  assumptions: z.infer<typeof assumptionsSchema>;
-}): Promise<ActionResult<{ validation: GraphValidation; report: EstimateReport }>> {
+/** Server-side (authoritative) validation shown before publishing. */
+export async function previewPublishAction(input: { definition: FlowDefinition }): Promise<ActionResult<GraphValidation>> {
   return runAction(async () => {
     await requireAdmin();
-    const flowId = uuid.parse(input.flowId);
-    const definition = flowDefinitionSchema.parse(input.definition);
-    const assumptions = assumptionsSchema.parse(input.assumptions);
-    const supabase = await createClient();
-    const { data: flow, error } = await supabase.from("flows").select("name").eq("id", flowId).single();
-    if (error) throw new Error(error.message);
-    return buildPublishReport(flowId, flow.name, definition, assumptions);
+    return validateFlow(flowDefinitionSchema.parse(input.definition));
   });
 }
 
 export async function publishFlowAction(input: {
   flowId: string;
   definition: FlowDefinition;
-  assumptions: z.infer<typeof assumptionsSchema>;
   mode: "active" | "testing";
   note: string;
-  acknowledgeWarnings: boolean;
 }): Promise<ActionResult<{ version: number }>> {
   return runAction(async () => {
     const s = await loadSettings();
@@ -182,18 +114,14 @@ export async function publishFlowAction(input: {
     });
     const flowId = uuid.parse(input.flowId);
     const definition = flowDefinitionSchema.parse(input.definition);
-    const assumptions = assumptionsSchema.parse(input.assumptions);
     const mode = z.enum(["active", "testing"]).parse(input.mode);
     const supabase = await createClient();
     const { data: flow, error } = await supabase.from("flows").select("id, name, status").eq("id", flowId).single();
     if (error) throw new Error(error.message);
     if (flow.status === "archived") throw new Error("Archived flows cannot be published.");
 
-    const { validation, report } = await buildPublishReport(flowId, flow.name, definition, assumptions);
+    const validation = validateFlow(definition);
     if (!validation.ok) throw new Error(`Fix ${validation.errors.length} error(s) before publishing: ${validation.errors[0].message}`);
-    if (report.overallLevel !== "normal" && !input.acknowledgeWarnings) {
-      throw new Error("Review and acknowledge the usage warnings before publishing.");
-    }
 
     const { data: last } = await supabase
       .from("flow_versions")
@@ -209,7 +137,6 @@ export async function publishFlowAction(input: {
         flow_id: flowId,
         version,
         definition,
-        estimate_report: report,
         note: input.note.trim().slice(0, 500) || null,
         published_by: session.userId,
       })
@@ -223,7 +150,6 @@ export async function publishFlowAction(input: {
       .update({
         published_version_id: created.id,
         status: mode,
-        estimate_snapshot: estimateSnapshot(report),
         draft_definition: definition,
         draft_updated_at: now,
         updated_by: session.userId,
@@ -231,7 +157,7 @@ export async function publishFlowAction(input: {
       .eq("id", flowId);
     if (updateError) throw new Error(updateError.message);
 
-    await audit(session, "flow.published", { type: "flow", id: flowId }, { version, mode, level: report.overallLevel });
+    await audit(session, "flow.published", { type: "flow", id: flowId }, { version, mode });
     revalidatePath("/flows");
     revalidatePath(`/flows/${flowId}`);
     return { version };
@@ -293,7 +219,7 @@ export async function duplicateFlowAction(input: { flowId: string }) {
     const supabase = await createClient();
     const { data: flow, error } = await supabase
       .from("flows")
-      .select("name, description, draft_definition, priority")
+      .select("name, description, draft_definition")
       .eq("id", flowId)
       .single();
     if (error) throw new Error(error.message);
@@ -303,7 +229,6 @@ export async function duplicateFlowAction(input: { flowId: string }) {
         name: `${flow.name} (copy)`.slice(0, 120),
         description: flow.description,
         draft_definition: flow.draft_definition,
-        priority: flow.priority,
         created_by: session.userId,
         updated_by: session.userId,
       })
@@ -326,19 +251,17 @@ export async function rollbackFlowAction(input: { flowId: string; versionId: str
     const supabase = await createClient();
     const { data: v, error } = await supabase
       .from("flow_versions")
-      .select("id, version, definition, estimate_report")
+      .select("id, version, definition")
       .eq("id", versionId)
       .eq("flow_id", flowId)
       .single();
     if (error) throw new Error(error.message);
-    const report = v.estimate_report as EstimateReport | null;
     const { error: updateError } = await supabase
       .from("flows")
       .update({
         published_version_id: v.id,
         draft_definition: v.definition,
         draft_updated_at: new Date().toISOString(),
-        estimate_snapshot: report ? estimateSnapshot(report) : null,
         updated_by: session.userId,
       })
       .eq("id", flowId);

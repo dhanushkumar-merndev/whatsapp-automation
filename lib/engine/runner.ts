@@ -28,6 +28,8 @@ interface RunContext {
   conversation: ConversationSnapshot;
   contact: ContactSnapshot;
   exec: ExecutionRecord;
+  /** The customer message being answered; "typing…" is shown on it during short waits. */
+  replyTo: string | null;
 }
 
 type NodeResult =
@@ -79,7 +81,15 @@ export async function startExecution(
     currentNodeId: trigger.id,
   });
   if (!exec) return null;
-  const ctx: RunContext = { deps, graph, version: args.version, conversation: args.conversation, contact: { ...args.contact }, exec };
+  const ctx: RunContext = {
+    deps,
+    graph,
+    version: args.version,
+    conversation: args.conversation,
+    contact: { ...args.contact },
+    exec,
+    replyTo: args.input.messageId ?? null,
+  };
   await run(ctx, trigger.id);
   return ctx.exec;
 }
@@ -100,7 +110,15 @@ export async function resumeWithInput(
   if (exec.status !== "waiting_input" || !awaiting || awaiting.kind !== "input") return exec;
 
   const graph = new FlowGraph(args.version.definition);
-  const ctx: RunContext = { deps, graph, version: args.version, conversation: args.conversation, contact: { ...args.contact }, exec };
+  const ctx: RunContext = {
+    deps,
+    graph,
+    version: args.version,
+    conversation: args.conversation,
+    contact: { ...args.contact },
+    exec,
+    replyTo: args.input.messageId ?? null,
+  };
   const question = graph.get(awaiting.questionNodeId);
   const consumer = graph.get(awaiting.nodeId);
   if (!question || !consumer) {
@@ -151,7 +169,15 @@ export async function resumeAfterDelay(
   if (args.jobId && awaiting.jobId && awaiting.jobId !== args.jobId) return { execution: exec, resumed: false };
 
   const graph = new FlowGraph(args.version.definition);
-  const ctx: RunContext = { deps, graph, version: args.version, conversation: args.conversation, contact: { ...args.contact }, exec };
+  const ctx: RunContext = {
+    deps,
+    graph,
+    version: args.version,
+    conversation: args.conversation,
+    contact: { ...args.contact },
+    exec,
+    replyTo: null,
+  };
   exec.status = "running";
   exec.awaiting = null;
   await deps.store.logNode({
@@ -336,13 +362,23 @@ async function sendOutbound(ctx: RunContext, node: FlowNode, message: OutboundMe
       asset,
     });
     await deps.store.completeOutbound(key, { waMessageId });
-    await deps.store.incrementUsage({ service: "whatsapp", metric: "messages_sent", flowId: exec.flowId, isTest: exec.isTest });
     return "sent";
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     await deps.store.completeOutbound(key, { error: msg });
     if (e instanceof SendError && e.opts.windowClosed) return "window_closed";
     throw e;
+  }
+}
+
+/** Re-shows "typing…" on the customer's message. Best effort: never fails the step. */
+async function showTyping(ctx: RunContext) {
+  const { sender } = ctx.deps;
+  if (!ctx.replyTo || !sender.markRead || ctx.deps.mode !== "live") return;
+  try {
+    await sender.markRead({ phoneNumberId: ctx.conversation.phoneNumberId, waMessageId: ctx.replyTo });
+  } catch (e) {
+    ctx.deps.logger.warn("typing indicator failed", { error: e instanceof Error ? e.message : String(e) });
   }
 }
 
@@ -404,12 +440,12 @@ async function executeNode(ctx: RunContext, node: FlowNode): Promise<NodeResult>
     case "wait": {
       const cfg = parseNodeConfig("wait", node.data.config);
       const seconds = waitSeconds(cfg);
-      const usage = deps.settings.usage;
-      if (usage.hardCapEnabled && !cfg.essential) {
-        const used = await deps.store.usageToday("qstash", "deliveries");
-        if (used >= usage.qstashDailyBudget) {
-          return { type: "next", handle: "out", status: "skipped", detail: { reason: "usage_cap_reached", used } };
-        }
+      const inline = deps.inlineWait;
+      if (inline && seconds <= deps.settings.execution.inlineWaitMaxSeconds && seconds * 1000 <= inline.budgetMs) {
+        // Short pause inside this request: no QStash round trip, and "typing…" shows meanwhile.
+        inline.budgetMs -= seconds * 1000;
+        await Promise.all([inline.sleep(seconds * 1000), showTyping(ctx)]);
+        return { type: "next", handle: "out", detail: { delaySeconds: seconds, inline: true } };
       }
       const jobsSoFar = Number(exec.context.vars.__jobs ?? 0);
       if (jobsSoFar >= deps.settings.rateLimits.scheduledJobsPerExecution) {
@@ -436,7 +472,6 @@ async function executeNode(ctx: RunContext, node: FlowNode): Promise<NodeResult>
         exec.context.vars.__jobs = jobsSoFar + 1;
         const { messageId } = await deps.scheduler.schedule({ jobId: job.id, delaySeconds: seconds });
         await deps.store.attachJobMessage(job.id, messageId);
-        await deps.store.incrementUsage({ service: "qstash", metric: "deliveries", flowId: exec.flowId, isTest: exec.isTest });
       }
       exec.status = "waiting_delay";
       exec.awaiting = { kind: "delay", nodeId: node.id, jobId: job.id };
@@ -445,21 +480,23 @@ async function executeNode(ctx: RunContext, node: FlowNode): Promise<NodeResult>
 
     case "ask_question": {
       const cfg = parseNodeConfig("ask_question", node.data.config);
+      const since = deps.now().toISOString();
       const outcome = await sendOutbound(ctx, node, { kind: "text", text: renderTemplate(cfg.question, scope(ctx)) });
       if (outcome === "window_closed") return windowStop();
       exec.context.lastQuestionNodeId = node.id;
       exec.status = "waiting_input";
-      exec.awaiting = { kind: "input", nodeId: node.id, questionNodeId: node.id };
+      exec.awaiting = { kind: "input", nodeId: node.id, questionNodeId: node.id, since };
       return { type: "wait", detail: { outcome, variable: cfg.variable } };
     }
 
     case "interactive": {
       const cfg = parseNodeConfig("interactive", node.data.config);
+      const since = deps.now().toISOString();
       const outcome = await sendOutbound(ctx, node, buildInteractiveMessage(cfg, scope(ctx)));
       if (outcome === "window_closed") return windowStop();
       exec.context.lastQuestionNodeId = node.id;
       exec.status = "waiting_input";
-      exec.awaiting = { kind: "input", nodeId: node.id, questionNodeId: node.id };
+      exec.awaiting = { kind: "input", nodeId: node.id, questionNodeId: node.id, since };
       return { type: "wait", detail: { outcome, variable: cfg.variable } };
     }
 
@@ -479,10 +516,11 @@ async function executeNode(ctx: RunContext, node: FlowNode): Promise<NodeResult>
       if (attempts >= cfg.maxAttempts || !questionNodeId) {
         return { type: "next", handle: "invalid", detail: { reason: outcome.reason, attempts, exhausted: true } };
       }
+      const since = deps.now().toISOString();
       const sent = await sendOutbound(ctx, node, { kind: "text", text: renderTemplate(cfg.errorMessage, scope(ctx)) }, `retry${attempts}`);
       if (sent === "window_closed") return windowStop();
       exec.status = "waiting_input";
-      exec.awaiting = { kind: "input", nodeId: node.id, questionNodeId };
+      exec.awaiting = { kind: "input", nodeId: node.id, questionNodeId, since };
       return { type: "wait", detail: { reason: outcome.reason, attempts, maxAttempts: cfg.maxAttempts } };
     }
 

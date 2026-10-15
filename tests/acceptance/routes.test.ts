@@ -6,7 +6,7 @@ import { metaInboundPayload } from "../helpers/meta";
 
 const h = createHarness();
 
-vi.mock("@/lib/server/pipeline", () => ({ createPipelineDeps: async () => h.deps }));
+vi.mock("@/lib/server/pipeline", () => ({ createPipelineDeps: async () => h.deps, createStore: () => h.store, createSender: () => h.sender }));
 vi.mock("next/server", async (orig) => {
   const mod = await orig<typeof import("next/server")>();
   // Run after() callbacks immediately in tests.
