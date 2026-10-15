@@ -26,6 +26,8 @@ export interface InboundInput {
   /** Interactive reply id (button_reply / list_reply / quick-reply payload). */
   replyId?: string;
   replyTitle?: string;
+  /** The message a tap answers (WhatsApp's context id): tells which question's buttons were tapped. */
+  contextId?: string;
   messageId?: string;
   /** Photo, file, video, voice note or sticker. */
   media?: { type: string; mediaId: string | null; mimeType: string | null; filename: string | null; caption: string | null };
@@ -96,6 +98,8 @@ export interface ExecutionContext {
   leadId: string | null;
   /** Node ids visited, in order (capped) — used for the progress diagram. */
   path: string[];
+  /** Button/list messages sent in this run: WhatsApp message id → question node id (capped). */
+  prompts?: Record<string, string>;
 }
 
 export type Awaiting =

@@ -70,6 +70,7 @@ function toExecution(r: Row): ExecutionRecord {
       isNewCustomer: ctx.isNewCustomer ?? false,
       leadId: ctx.leadId ?? null,
       path: ctx.path ?? [],
+      prompts: ctx.prompts ?? {},
     },
     awaiting: (r.awaiting as ExecutionRecord["awaiting"]) ?? null,
     isTest: Boolean(r.is_test),

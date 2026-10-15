@@ -5,6 +5,8 @@ export interface InboundSpec {
   text?: string;
   replyId?: string;
   replyTitle?: string;
+  /** The message a tap answers (its wamid). */
+  contextId?: string;
   type?: string;
   id?: string;
   timestamp?: Date;
@@ -30,6 +32,7 @@ export function metaInboundPayload(
         ...base,
         type: "interactive",
         interactive: { type: "list_reply", list_reply: { id: s.replyId, title: s.replyTitle ?? s.replyId } },
+        ...(s.contextId ? { context: { from: "15550000000", id: s.contextId } } : {}),
       };
     }
     if (s.type && s.type !== "text") return { ...base, type: s.type, [s.type]: s.content ?? {} };

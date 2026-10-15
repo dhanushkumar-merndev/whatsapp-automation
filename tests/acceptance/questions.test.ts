@@ -187,6 +187,73 @@ describe("No reply follow-up", () => {
   });
 });
 
+describe("Taps on an earlier question's buttons", () => {
+  const YES_NO = [
+    { id: "yes", title: "Yes", description: "" },
+    { id: "no", title: "No", description: "" },
+  ];
+  const interestThenName = flow(
+    [
+      node("interest", "interactive", { body: "Would you like to know more?", options: YES_NO, variable: "interest" }),
+      node("name", "ask_question", { question: "May I know your name?", variable: "name" }),
+      node("thanks", "send_message", { text: "Thanks {{vars.name}}" }),
+    ],
+    [edge("interest", "name"), edge("name", "thanks")],
+  );
+
+  it("asks the current question again instead of taking the tap as the answer", async () => {
+    const h = createHarness({ definition: interestThenName });
+    await h.say("Hi");
+    const buttons = h.sender.sent[0].waMessageId;
+    h.clock.advance(5);
+    await h.select("yes", "Yes", buttons);
+    h.clock.advance(5);
+    await h.select("no", "No", buttons);
+    expect(h.sender.texts().slice(1)).toEqual(["May I know your name?", "May I know your name?"]);
+    expect(h.execution().context.vars.name).toBeUndefined();
+    h.clock.advance(5);
+    await h.say("Gayathri");
+    expect(h.sender.texts().at(-1)).toBe("Thanks Gayathri");
+  });
+
+  it("treats a tap without a known message as old when this question has no such button", async () => {
+    const h = createHarness({ definition: interestThenName });
+    await h.say("Hi");
+    h.clock.advance(5);
+    await h.select("yes", "Yes");
+    h.clock.advance(5);
+    await h.select("no", "No");
+    expect(h.sender.texts().at(-1)).toBe("May I know your name?");
+    expect(h.execution().context.vars.name).toBeUndefined();
+  });
+
+  it("tells two questions with the same buttons apart", async () => {
+    const h = createHarness({
+      definition: flow(
+        [
+          node("interest", "interactive", { body: "Interested?", options: YES_NO, variable: "interest" }),
+          node("visit", "interactive", { body: "Book a site visit?", options: YES_NO, variable: "visit" }),
+          node("c", "condition", { left: "{{vars.visit.id}}", operator: "option_selected", right: "yes" }),
+          node("booked", "send_message", { text: "Booked" }),
+          node("skip", "send_message", { text: "No visit" }),
+        ],
+        [edge("interest", "visit"), edge("visit", "c"), edge("c", "booked", "true"), edge("c", "skip", "false")],
+      ),
+    });
+    await h.say("Hi");
+    const first = h.sender.sent[0].waMessageId;
+    h.clock.advance(5);
+    await h.select("yes", "Yes", first);
+    const second = h.sender.sent[1].waMessageId;
+    h.clock.advance(5);
+    await h.select("no", "No", first);
+    expect(h.sender.texts().slice(1)).toEqual(["Book a site visit?", "Book a site visit?"]);
+    h.clock.advance(5);
+    await h.select("yes", "Yes", second);
+    expect(h.sender.texts().at(-1)).toBe("Booked");
+  });
+});
+
 describe("parseDate", () => {
   const now = new Date("2026-10-14T20:00:00Z"); // 15 Oct, 01:30 in India
   const d = (t: string) => parseDate(t, "Asia/Kolkata", now)?.toISOString().slice(0, 10) ?? null;

@@ -1,5 +1,5 @@
 import { FlowGraph } from "./graph";
-import { applyMultiReply, buildInteractiveMessage, buildMultiMessage, isMultiAnswer, matchOption } from "./interactive";
+import { applyMultiReply, buildInteractiveMessage, buildMultiMessage, DONE_ID, isMultiAnswer, matchOption } from "./interactive";
 import { DEFAULT_INPUT_ERRORS, parseAnswer } from "./input-types";
 import {
   availableDays,
@@ -60,9 +60,10 @@ type NodeResult =
 
 const TERMINAL: ExecutionStatus[] = ["completed", "handoff", "window_expired", "failed", "cancelled", "abandoned"];
 const MAX_PATH = 200;
+const MAX_PROMPTS = 20;
 
 export function emptyContext(isNewCustomer: boolean): ExecutionContext {
-  return { vars: {}, attempts: {}, lastQuestionNodeId: null, isNewCustomer, leadId: null, path: [] };
+  return { vars: {}, attempts: {}, lastQuestionNodeId: null, isNewCustomer, leadId: null, path: [], prompts: {} };
 }
 
 // ---------------------------------------------------------------------------
@@ -139,6 +140,25 @@ export async function resumeWithInput(
   if (!question || !consumer) {
     await finish(ctx, "failed", "The awaited node no longer exists in this flow version");
     return exec;
+  }
+
+  if (isOldTap(exec, question, args.input)) {
+    // A button from an earlier question (e.g. "No" under "Interested?" while we ask for a name):
+    // it isn't an answer to this one, so ask this question again.
+    await cancelTimeout(ctx, awaiting.timeoutJobId);
+    exec.status = "running";
+    exec.awaiting = null;
+    await deps.store.logNode({
+      executionId: exec.id,
+      nodeId: question.id,
+      nodeType: question.type,
+      step: exec.step,
+      status: "skipped",
+      outputHandle: null,
+      detail: { event: "old_button_tapped", preview: (args.input.replyTitle ?? args.input.text).slice(0, 120) },
+    });
+    await run(ctx, question.id);
+    return ctx.exec;
   }
 
   await cancelTimeout(ctx, awaiting.timeoutJobId);
@@ -519,6 +539,11 @@ async function sendOutbound(ctx: RunContext, node: FlowNode, message: OutboundMe
       asset,
     });
     await deps.store.completeOutbound(key, { waMessageId });
+    if (message.kind === "buttons" || message.kind === "list") {
+      // Remember which question these buttons belong to, so a late tap on them can be recognised.
+      const kept = Object.entries(exec.context.prompts ?? {}).slice(-(MAX_PROMPTS - 1));
+      exec.context.prompts = Object.fromEntries([...kept, [waMessageId, node.id]]);
+    }
     return "sent";
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -526,6 +551,23 @@ async function sendOutbound(ctx: RunContext, node: FlowNode, message: OutboundMe
     if (e instanceof SendError && e.opts.windowClosed) return "window_closed";
     throw e;
   }
+}
+
+/**
+ * True when the customer tapped a button or list row that belongs to another
+ * question than the one we are waiting on. Typed replies always count as answers.
+ */
+function isOldTap(exec: ExecutionRecord, question: FlowNode, input: InboundInput): boolean {
+  if (input.type !== "interactive" || !input.replyId) return false;
+  const askedBy = input.contextId ? exec.context.prompts?.[input.contextId] : undefined;
+  if (askedBy) return askedBy !== question.id;
+  // Buttons we didn't record (an earlier run, or sent before this was tracked):
+  // only this question's own options count.
+  if (question.type === "interactive") {
+    const cfg = parseNodeConfig("interactive", question.data.config);
+    return input.replyId !== DONE_ID && !cfg.options.some((o) => o.id === input.replyId);
+  }
+  return question.type === "ask_question" || question.type === "whatsapp_form";
 }
 
 /**

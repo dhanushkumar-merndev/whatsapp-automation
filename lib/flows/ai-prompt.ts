@@ -109,6 +109,7 @@ export function buildAiPrompt(ctx: AiPromptContext): string {
 6. Placeholders in any text: {{contact.name}}, {{contact.name|there}} (with fallback), {{contact.phone}}, {{contact.business_name}}, {{contact.email}}, {{vars.<variable>}} (an answer; for options: the chosen title), {{vars.<variable>.id}} (chosen option id), {{vars.first_message}}, {{vars.last_message}}.
 7. WhatsApp limits: message ≤ 4096 chars, option title ≤ 24 (≤ 20 for buttons), option description ≤ 72, header/footer ≤ 60, list button ≤ 20, at most 10 options.
 8. Write like a friendly human: short messages, WhatsApp formatting (*bold*, _italic_, line breaks as \\n), a few emojis at most.
+   When a message answers a question the customer picked or asked (e.g. an FAQ menu), start straight with the answer. Don't repeat the question in it: they can already see it just above.
 9. Only include config fields you need; others get sensible defaults.
 10. Reply with the JSON only, in one \`\`\`json code block, no comments. If something essential is unclear, first ask me up to 3 short questions instead.
 11. If I send you an existing workflow JSON with changes, return the complete updated JSON and keep existing step ids.

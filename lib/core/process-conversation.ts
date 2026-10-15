@@ -26,6 +26,7 @@ export function toInboundInput(msg: PendingInbound): InboundInput {
     text: (msg.body ?? "").trim(),
     replyId: typeof p.reply_id === "string" ? p.reply_id : undefined,
     replyTitle: typeof p.reply_title === "string" ? p.reply_title : undefined,
+    contextId: typeof p.context_id === "string" ? p.context_id : undefined,
     messageId: msg.waMessageId,
     ...(MEDIA_TYPES.has(msg.type)
       ? {

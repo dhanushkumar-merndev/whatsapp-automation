@@ -71,8 +71,9 @@ export function createHarness(
     async say(text: string, spec: Omit<InboundSpec, "text"> = {}) {
       return deliver(metaInboundPayload([{ text, timestamp: clock.now(), ...spec }]));
     },
-    async select(replyId: string, replyTitle?: string) {
-      return deliver(metaInboundPayload([{ replyId, replyTitle, timestamp: clock.now() }]));
+    /** Taps a button or list row; `contextId` is the wamid of the message it sits under. */
+    async select(replyId: string, replyTitle?: string, contextId?: string) {
+      return deliver(metaInboundPayload([{ replyId, replyTitle, contextId, timestamp: clock.now() }]));
     },
     /** Simulates QStash delivering every scheduled job that is now due. */
     async runDueJobs(opts: { retried?: number } = {}) {
