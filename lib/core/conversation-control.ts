@@ -89,6 +89,7 @@ export async function handleTakeover(deps: PipelineDeps, conversationId: string)
     link: `/conversations/${conversationId}`,
     entityType: "conversation",
     entityId: conversationId,
+    conversationId,
   });
 }
 

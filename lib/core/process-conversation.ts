@@ -252,6 +252,7 @@ async function handleInbound(deps: PipelineDeps, msg: PendingInbound, state: Tur
       link: `/conversations/${conversation.id}`,
       entityType: "conversation",
       entityId: conversation.id,
+      conversationId: conversation.id,
     });
     await store.markInbound(msg.id, "processed", "handoff_requested");
     return;
@@ -281,6 +282,7 @@ async function handleInbound(deps: PipelineDeps, msg: PendingInbound, state: Tur
       link: `/conversations/${conversation.id}`,
       entityType: "conversation",
       entityId: conversation.id,
+      conversationId: conversation.id,
     });
     await store.markInbound(msg.id, "ignored", "conversation_in_handoff");
     return;

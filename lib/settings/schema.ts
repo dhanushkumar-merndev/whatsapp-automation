@@ -32,6 +32,8 @@ export const appSettingsSchema = z.object({
   telegram: z
     .object({
       enabled: z.boolean().default(true),
+      /** Chat alerts carry buttons (Bot on, Restart, Close, Take over). Needs the bot's webhook (Settings). */
+      actionButtons: z.boolean().default(false),
       /** Telegram chats that receive alerts: user IDs, group IDs (negative) or @channel names. */
       chatIds: z.array(z.string().regex(/^-?\d{1,20}$|^@[A-Za-z0-9_]{5,32}$/)).max(10).default([]),
       events: z

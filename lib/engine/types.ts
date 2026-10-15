@@ -286,6 +286,8 @@ export interface NotificationInput {
   link?: string;
   entityType?: string;
   entityId?: string;
+  /** The chat this alert is about: Telegram alerts then get action buttons. */
+  conversationId?: string;
 }
 
 // ---------------------------------------------------------------------------

@@ -666,6 +666,7 @@ async function handleBookingReply(ctx: RunContext, node: FlowNode, input: Inboun
     link: "/bookings",
     entityType: "booking",
     entityId: booked.id,
+    conversationId: ctx.conversation.id,
   });
   if (cfg.confirmMessage.trim()) {
     const sent = await sendOutbound(ctx, node, { kind: "text", text: renderTemplate(cfg.confirmMessage, scope(ctx)) }, "confirm");
@@ -887,6 +888,7 @@ async function executeNode(ctx: RunContext, node: FlowNode): Promise<NodeResult>
         link: `/conversations/${ctx.conversation.id}`,
         entityType: "conversation",
         entityId: ctx.conversation.id,
+        conversationId: ctx.conversation.id,
       });
       return { type: "next", handle: "out" };
     }
@@ -1031,6 +1033,7 @@ async function executeNode(ctx: RunContext, node: FlowNode): Promise<NodeResult>
         link: `/leads/${lead.id}`,
         entityType: "lead",
         entityId: lead.id,
+        conversationId: ctx.conversation.id,
       });
       if (cfg.updateContact) {
         const contactPatch: { name?: string; business_name?: string; email?: string } = {};
@@ -1101,6 +1104,7 @@ async function executeNode(ctx: RunContext, node: FlowNode): Promise<NodeResult>
         link: `/conversations/${ctx.conversation.id}`,
         entityType: "conversation",
         entityId: ctx.conversation.id,
+        conversationId: ctx.conversation.id,
       });
       return { type: "stop", status: "handoff", nodeStatus: "success", detail: { reason: cfg.reason } };
     }

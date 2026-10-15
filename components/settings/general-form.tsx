@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { findTelegramChatsAction, sendTelegramTestAction, updateSettingsAction } from "@/app/(dashboard)/settings/actions";
+import { setTelegramButtonsAction, telegramButtonsStatusAction, findTelegramChatsAction, sendTelegramTestAction, updateSettingsAction } from "@/app/(dashboard)/settings/actions";
 import type { AppSettings } from "@/lib/settings/schema";
 import { cn } from "@/lib/utils";
 
@@ -100,6 +100,40 @@ function BusinessCard({ s, setS }: { s: AppSettings; setS: (next: AppSettings) =
   );
 }
 
+/** Action buttons on chat alerts: Bot on, Restart flow, Take over, Close. */
+function TelegramButtons({ on, tokenSet, onChange }: { on: boolean; tokenSet: boolean; onChange: (on: boolean) => void }) {
+  const [status, setStatus] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  useEffect(() => {
+    if (!tokenSet || !on) return;
+    let live = true;
+    void telegramButtonsStatusAction().then((r) => live && setStatus(r.ok ? (r.data?.detail ?? null) : r.error));
+    return () => {
+      live = false;
+    };
+  }, [on, tokenSet]);
+  const toggle = (next: boolean) =>
+    start(async () => {
+      const r = await setTelegramButtonsAction({ on: next });
+      if (!r.ok) return void toast.error(r.error);
+      onChange(next);
+      setStatus(next ? "Connected" : null);
+      toast.success(next ? "Buttons on. New chat alerts will have them." : "Buttons off.");
+    });
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-xl border p-3">
+      <span className="space-y-0.5">
+        <span className="block text-sm">Action buttons on alerts</span>
+        <span className="block text-[11px] text-muted-foreground">
+          🤖 Bot on · 🔁 Restart flow · 🙋 Take over · ✖️ Close — right from Telegram. Uses this bot&rsquo;s webhook, so don&rsquo;t share the bot with another app.
+          {on && status && <span className="mt-0.5 block">Status: {status}</span>}
+        </span>
+      </span>
+      <Switch checked={on} disabled={!tokenSet || pending} onCheckedChange={toggle} aria-label="Action buttons on alerts" />
+    </div>
+  );
+}
+
 function TelegramCard({ s, setS, tokenSet }: { s: AppSettings; setS: (next: AppSettings) => void; tokenSet: boolean }) {
   const [chats, setChats] = useState(s.telegram.chatIds.join("\n"));
   const [busy, startBusy] = useTransition();
@@ -161,6 +195,7 @@ function TelegramCard({ s, setS, tokenSet }: { s: AppSettings; setS: (next: AppS
             Send /start to your bot (or add it to a group and send a message there), then use “Find chat IDs”.
           </p>
         </div>
+        <TelegramButtons on={tg.actionButtons} tokenSet={tokenSet} onChange={(on) => setTg({ actionButtons: on })} />
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" onClick={findChats} disabled={busy || !tokenSet}>
             {busy ? <Loader2 className="animate-spin" /> : <Search />} Find chat IDs
@@ -202,7 +237,8 @@ export function GeneralSettingsForm({ initial, telegramTokenSet }: { initial: Ap
         execution: s.execution,
         rateLimits: s.rateLimits,
         retention: s.retention,
-        telegram: s.telegram,
+        // Buttons are switched on/off separately (it also changes the bot's webhook).
+        telegram: { enabled: s.telegram.enabled, chatIds: s.telegram.chatIds, events: s.telegram.events },
         business: s.business,
         coexistence: s.coexistence,
       });
