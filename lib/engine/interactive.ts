@@ -118,3 +118,117 @@ export function matchOption(options: InteractiveOption[], input: InboundInput): 
   }
   return { id: null, title: null, index: null, raw, matched: false };
 }
+
+// ---------------------------------------------------------------------------
+// Multiple choice: the list is re-sent after each tap with the picks ticked,
+// until the customer taps Done (or reaches the maximum). Typed numbers such as
+// "1, 3" or titles separated by commas select several options at once.
+// ---------------------------------------------------------------------------
+
+export const DONE_ID = "__done";
+/** One list row is kept for "Done". */
+export const MAX_MULTI_OPTIONS = WA_LIMITS.maxListRows - 1;
+
+export interface MultiAnswer extends OptionAnswer {
+  multi: true;
+  ids: string[];
+  titles: string[];
+  /** True once the customer finished choosing. */
+  done: boolean;
+}
+
+export function isMultiAnswer(v: unknown): v is MultiAnswer {
+  return typeof v === "object" && v !== null && (v as MultiAnswer).multi === true;
+}
+
+function multiAnswer(options: InteractiveOption[], ids: string[], raw: string, done: boolean): MultiAnswer {
+  const picked = options.filter((o) => ids.includes(o.id));
+  return {
+    multi: true,
+    ids: picked.map((o) => o.id),
+    titles: picked.map((o) => o.title),
+    id: picked.map((o) => o.id).join(","),
+    title: picked.map((o) => o.title).join(", "),
+    index: null,
+    raw,
+    matched: done,
+    done,
+  };
+}
+
+/** The list (or numbered text) for a multiple-choice question, with current picks ticked. */
+export function buildMultiMessage(cfg: InteractiveConfig, scope: TemplateScope, selected: string[], notice?: string): OutboundMessage {
+  const header = renderTemplate(cfg.header, scope).slice(0, WA_LIMITS.headerText) || undefined;
+  const footer = renderTemplate(cfg.footer, scope).slice(0, WA_LIMITS.footerText) || undefined;
+  const picked = cfg.options.filter((o) => selected.includes(o.id)).map((o) => o.title);
+  const status = picked.length ? `Selected: ${picked.join(", ")}` : cfg.minSelect > 1 ? `Choose at least ${cfg.minSelect}.` : "";
+  const body = [renderTemplate(cfg.body, scope), status && `\n${status}`, notice && `\n${notice}`].filter(Boolean).join("\n").slice(0, WA_LIMITS.body);
+  if (cfg.mode === "text" || cfg.options.length > MAX_MULTI_OPTIONS) {
+    const lines = cfg.options.map((o, i) => `${selected.includes(o.id) ? "✅" : "▫️"} ${i + 1}. ${o.title}`);
+    const text = [header, body, "", ...lines, "", `Reply with the numbers (e.g. 1,3), then DONE.`, footer].filter((p) => p !== undefined).join("\n").trim();
+    return { kind: "text", text };
+  }
+  return {
+    kind: "list",
+    body,
+    header,
+    footer,
+    buttonText: cfg.buttonText,
+    rows: [
+      ...cfg.options.map((o) => {
+        const on = selected.includes(o.id);
+        return {
+          id: o.id,
+          title: on && o.title.length <= WA_LIMITS.listRowTitle - 2 ? `✓ ${o.title}` : o.title,
+          description: on ? "Selected · tap to remove" : o.description || undefined,
+        };
+      }),
+      { id: DONE_ID, title: cfg.doneText.slice(0, WA_LIMITS.listRowTitle), description: picked.length ? `Finish with ${picked.length} selected` : "Finish choosing" },
+    ],
+  };
+}
+
+const DONE_WORDS = new Set(["done", "finish", "finished", "ok", "okay", "that s all", "thats all", "submit", "next"]);
+
+/** Applies one customer reply to a multiple-choice question. */
+export function applyMultiReply(
+  cfg: InteractiveConfig,
+  current: unknown,
+  input: InboundInput,
+): { answer: MultiAnswer; done: boolean; notice?: string } {
+  const raw = (input.replyTitle ?? input.text ?? "").trim();
+  let ids = isMultiAnswer(current) ? [...current.ids] : [];
+  const max = cfg.maxSelect ?? cfg.options.length;
+  const finish = (notice?: string) => {
+    if (ids.length >= cfg.minSelect) return { answer: multiAnswer(cfg.options, ids, raw, true), done: true };
+    return { answer: multiAnswer(cfg.options, ids, raw, false), done: false, notice: notice ?? `Please choose at least ${cfg.minSelect}.` };
+  };
+  const pending = (notice?: string) => ({ answer: multiAnswer(cfg.options, ids, raw, false), done: false, notice });
+
+  if (input.replyId === DONE_ID || (!input.replyId && DONE_WORDS.has(normalise(raw)))) return finish();
+
+  const tapped = input.replyId ? cfg.options.find((o) => o.id === input.replyId) : undefined;
+  if (tapped) {
+    ids = ids.includes(tapped.id) ? ids.filter((x) => x !== tapped.id) : [...ids, tapped.id];
+    if (ids.length > max) {
+      ids = ids.filter((x) => x !== tapped.id);
+      return pending(`You can choose up to ${max}. Tap ${cfg.doneText} to continue.`);
+    }
+    return ids.length === max && cfg.maxSelect !== null ? finish() : pending();
+  }
+
+  // Typed: "1, 3" / "1 and 3" / "Website, Ads"
+  const text = raw.replace(/\b(and|&)\b/gi, ",");
+  const parts = text.split(/[,;\n]+|\s+(?=\d)/).map((p) => p.trim()).filter(Boolean);
+  const chosen: string[] = [];
+  for (const p of parts) {
+    const n = /^#?(\d{1,2})[.)]?$/.exec(p);
+    const o = n ? cfg.options[Number(n[1]) - 1] : cfg.options.find((x) => normalise(x.title) === normalise(p));
+    if (!o) return pending(`Please tap the options you want, then ${cfg.doneText}. You can also type their numbers, like 1,3.`);
+    if (!chosen.includes(o.id)) chosen.push(o.id);
+  }
+  if (!chosen.length) return pending();
+  if (chosen.length > max) return pending(`You can choose up to ${max}.`);
+  ids = chosen;
+  return finish();
+}

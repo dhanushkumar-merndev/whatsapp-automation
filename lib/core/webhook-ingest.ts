@@ -64,8 +64,8 @@ export function extractInbound(m: Json): { type: string; body: string | null; pa
     }
     case "location": {
       const l = obj(m.location);
-      payload.location = { latitude: l.latitude, longitude: l.longitude, name: str(l.name) };
-      body = "[location]";
+      payload.location = { latitude: l.latitude, longitude: l.longitude, name: str(l.name), address: str(l.address) };
+      body = str(l.name) ? `[location] ${str(l.name)}` : "[location]";
       break;
     }
     case "reaction":

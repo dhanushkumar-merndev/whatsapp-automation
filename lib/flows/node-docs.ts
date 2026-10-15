@@ -45,13 +45,21 @@ export const NODE_DOCS: Record<NodeType, NodeDoc> = {
     notes: ["Keep pauses short (2–5 seconds) between messages. Never wait longer than 23 hours: the 24-hour reply window would close."],
   },
   ask_question: {
-    purpose: "Ask a free-text question and wait for the reply. The answer is stored in a variable.",
+    purpose: "Ask a question and wait for the reply, stored in a variable. Can check the answer type and re-ask.",
     config: [
       `question (string, required).`,
       `variable (string, required) — e.g. "name". Later: {{vars.name}}.`,
       `leadField ("none" | "name" | "business_name" | "service" | "requirements" | "email", default "none") — also save the answer on the lead.`,
+      `inputType ("text" | "number" | "email" | "phone" | "date" | "url" | "media" | "location", default "text") — anything but "text" is checked and re-asked. "date" understands 25/10, 25 Oct, tomorrow, Monday ({{vars.x}} shows "Mon, 25 Oct 2026", {{vars.x.iso}} = 2026-10-25). "media" = a photo/file, "location" = a shared pin.`,
+      `min, max (number | null) — for inputType "number".`,
+      `errorMessage (string, optional) — sent when the answer doesn't fit; leave out for a friendly default.`,
+      `maxAttempts (integer 1–10, default 3) — then output "invalid".`,
+      `timeoutMinutes (integer 0–1380, default 0) — if > 0 and there is no reply in time, output "no_reply" runs (e.g. a reminder).`,
     ],
-    notes: ["To check the answer (e.g. a valid email), put a validation step directly after it."],
+    notes: [
+      `Outputs: "out" (answer), "invalid" (only when inputType isn't "text"; optional — if left out the flow continues with what they wrote), "no_reply" (only when timeoutMinutes > 0). With only "out", "next" can be a plain string.`,
+      "Prefer inputType over separate validation steps.",
+    ],
   },
   interactive: {
     purpose: "Ask the customer to pick one option (WhatsApp reply buttons or list). They can also type the number or the title.",
@@ -61,13 +69,20 @@ export const NODE_DOCS: Record<NodeType, NodeDoc> = {
       `buttonText (string, max 20, default "Choose") — label of the list button.`,
       `mode ("auto" | "buttons" | "list" | "text", default "auto") — auto: ≤ 3 short options → buttons, ≤ 10 → list.`,
       `options (array, 1–10) of { id, title, description } — id: letters/numbers/_-.: (e.g. "svc_web"); title max 24 chars (max 20 for buttons); description max 72 (list only).`,
-      `variable (string, required) — the answer: {{vars.x}} = chosen title, {{vars.x.id}} = chosen id.`,
+      `variable (string, required) — the answer: {{vars.x}} = chosen title(s), {{vars.x.id}} = chosen id(s), comma-separated when several.`,
       `leadField (same as ask_question).`,
+      `selection ("single" | "multiple", default "single") — "multiple": the customer ticks options in the list and taps Done (max 9 options).`,
+      `minSelect (integer, default 1), maxSelect (integer | null, default null = no limit) — for "multiple".`,
+      `doneText (string, max 24, default "✅ Done") — the finish row for "multiple".`,
+      `timeoutMinutes (integer, default 0) — if > 0, output "no_reply" runs when they don't answer in time.`,
     ],
-    notes: ["To branch on the choice, follow with condition steps using operator option_selected."],
+    notes: [
+      "To branch on the choice, follow with condition steps using operator option_selected (works for several choices too).",
+      `Outputs: "out", plus "no_reply" only when timeoutMinutes > 0.`,
+    ],
   },
   validation: {
-    purpose: "Check the answer to the question right before it. Invalid → re-asks with errorMessage; after maxAttempts → output “invalid”.",
+    purpose: "Advanced: extra checks (length, regex, allowed options) on the answer to the question right before it. Invalid → re-asks with errorMessage; after maxAttempts → output “invalid”.",
     config: [
       `variable (string, required) — same variable as the question.`,
       `required (boolean, default true).`,

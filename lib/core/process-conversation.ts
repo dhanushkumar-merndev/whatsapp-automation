@@ -15,14 +15,39 @@ const BATCH = 20;
 /** Meta timestamps are whole seconds, so allow one second before comparing with our clock. */
 const TIMESTAMP_SLACK_MS = 1000;
 
+const MEDIA_TYPES = new Set(["image", "document", "video", "audio", "sticker"]);
+const text = (v: unknown) => (typeof v === "string" && v ? v : null);
+
 export function toInboundInput(msg: PendingInbound): InboundInput {
   const p = msg.payload ?? {};
+  const loc = (p.location ?? null) as Record<string, unknown> | null;
   return {
     type: msg.type,
     text: (msg.body ?? "").trim(),
     replyId: typeof p.reply_id === "string" ? p.reply_id : undefined,
     replyTitle: typeof p.reply_title === "string" ? p.reply_title : undefined,
     messageId: msg.waMessageId,
+    ...(MEDIA_TYPES.has(msg.type)
+      ? {
+          media: {
+            type: msg.type,
+            mediaId: text(p.media_id),
+            mimeType: text(p.mime_type),
+            filename: text(p.filename),
+            caption: msg.body && !/^\[\w+\]$/.test(msg.body) ? msg.body : null,
+          },
+        }
+      : {}),
+    ...(msg.type === "location" && loc
+      ? {
+          location: {
+            latitude: Number(loc.latitude),
+            longitude: Number(loc.longitude),
+            name: text(loc.name),
+            address: text(loc.address),
+          },
+        }
+      : {}),
   };
 }
 

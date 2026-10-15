@@ -5,6 +5,8 @@ export type NodeCategory = "trigger" | "messaging" | "input" | "logic" | "data" 
 export interface NodeOutput {
   id: string;
   label: string;
+  /** Optional branches may stay unconnected without a warning. */
+  optional?: boolean;
 }
 
 export interface NodeDefinition<T extends NodeType = NodeType> {
@@ -15,6 +17,7 @@ export interface NodeDefinition<T extends NodeType = NodeType> {
   /** Tailwind-compatible accent colour (hex) used by the canvas and palette. */
   color: string;
   hasInput: boolean;
+  /** Every output the step can have; `outputsFor` gives the ones its current settings use. */
   outputs: NodeOutput[];
   /** Whether the node sends at least one WhatsApp message when executed. */
   sends: boolean;
@@ -26,6 +29,9 @@ export interface NodeDefinition<T extends NodeType = NodeType> {
 }
 
 const OUT: NodeOutput[] = [{ id: "out", label: "Next" }];
+const ANSWER: NodeOutput = { id: "out", label: "Answer" };
+const FAILED: NodeOutput = { id: "invalid", label: "Failed", optional: true };
+const NO_REPLY: NodeOutput = { id: "no_reply", label: "No reply", optional: true };
 
 export const NODE_REGISTRY: { [K in NodeType]: NodeDefinition<K> } = {
   trigger: {
@@ -80,23 +86,33 @@ export const NODE_REGISTRY: { [K in NodeType]: NodeDefinition<K> } = {
   ask_question: {
     type: "ask_question",
     label: "Ask question",
-    description: "Ask for free text and store the reply in a variable.",
+    description: "Ask a question: text, number, email, phone, date, link, photo/file or location. Checks the answer.",
     category: "input",
     color: "#7c3aed",
     hasInput: true,
-    outputs: OUT,
+    outputs: [ANSWER, FAILED, NO_REPLY],
     sends: true,
     waitsForInput: true,
-    defaults: () => ({ question: "May I know your name, please?", variable: "name", leadField: "name" }),
+    defaults: () => ({
+      question: "May I know your name, please?",
+      variable: "name",
+      leadField: "name",
+      inputType: "text",
+      min: null,
+      max: null,
+      errorMessage: "",
+      maxAttempts: 3,
+      timeoutMinutes: 0,
+    }),
   },
   interactive: {
     type: "interactive",
-    label: "Interactive selection",
-    description: "Reply buttons or a list, with a numbered text fallback.",
+    label: "Choice question",
+    description: "Buttons or a list. One choice, or several (tick and tap Done). Typed numbers work too.",
     category: "input",
     color: "#9333ea",
     hasInput: true,
-    outputs: OUT,
+    outputs: [ANSWER, NO_REPLY],
     sends: true,
     waitsForInput: true,
     defaults: () => ({
@@ -111,6 +127,11 @@ export const NODE_REGISTRY: { [K in NodeType]: NodeDefinition<K> } = {
       ],
       variable: "choice",
       leadField: "none",
+      selection: "single",
+      minSelect: 1,
+      maxSelect: null,
+      doneText: "✅ Done",
+      timeoutMinutes: 0,
     }),
   },
   validation: {
@@ -224,6 +245,19 @@ export const NODE_CATEGORY_LABELS: Record<NodeCategory, string> = {
   data: "Data & CRM",
   control: "Flow control",
 };
+
+/** The outputs a step uses with its current settings (e.g. "No reply" only when a timeout is set). */
+export function outputsFor(type: NodeType, config: Record<string, unknown> | null | undefined): NodeOutput[] {
+  const c = config ?? {};
+  const outs = NODE_REGISTRY[type].outputs;
+  if (type === "ask_question" || type === "interactive") {
+    const typed = type === "ask_question" && typeof c.inputType === "string" && c.inputType !== "text";
+    const timeout = Number(c.timeoutMinutes ?? 0) > 0;
+    const active = outs.filter((o) => o.id === "out" || (o.id === "invalid" && typed) || (o.id === "no_reply" && timeout));
+    return active.length === 1 ? [{ id: "out", label: "Next" }] : active;
+  }
+  return outs;
+}
 
 export function nodeDef(type: NodeType): NodeDefinition {
   return NODE_REGISTRY[type] as unknown as NodeDefinition;

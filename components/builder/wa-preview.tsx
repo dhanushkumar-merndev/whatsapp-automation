@@ -3,7 +3,7 @@
 import { useContext } from "react";
 import { List } from "lucide-react";
 import { renderTemplate, type TemplateScope } from "@/lib/engine/template";
-import { numberedOptionsText, resolveInteractiveMode } from "@/lib/engine/interactive";
+import { MAX_MULTI_OPTIONS, numberedOptionsText, resolveInteractiveMode } from "@/lib/engine/interactive";
 import type { InteractiveConfig, InteractiveOption } from "@/lib/engine/schema";
 import { VariablesContext } from "./fields";
 
@@ -53,9 +53,14 @@ export function TextPreview({ text }: { text: string }) {
 export function InteractivePreview({ config }: { config: Record<string, unknown> }) {
   const scope = useSampleScope();
   const options = ((config.options as InteractiveOption[]) ?? []).filter((o) => o.title?.trim());
+  const multiple = config.selection === "multiple";
   let mode: "buttons" | "list" | "text" = "list";
   try {
-    mode = resolveInteractiveMode({ ...(config as unknown as InteractiveConfig), options });
+    mode = multiple
+      ? config.mode === "text" || options.length > MAX_MULTI_OPTIONS
+        ? "text"
+        : "list"
+      : resolveInteractiveMode({ ...(config as unknown as InteractiveConfig), options });
   } catch {}
   const r = (v: unknown) => renderTemplate(typeof v === "string" ? v : "", scope);
   const body = r(config.body).trim();
@@ -81,7 +86,9 @@ export function InteractivePreview({ config }: { config: Record<string, unknown>
         )}
       </div>
       <p className="mt-2 text-[11px] text-[#54656f] dark:text-[#8696a0]">
-        Sent as {mode === "buttons" ? "reply buttons" : mode === "list" ? "a list" : "numbered text"}. Customers can also reply with the option number.
+        {multiple
+          ? `Customers tick options in ${mode === "list" ? "the list" : "the numbered list"}, then tap “${typeof config.doneText === "string" && config.doneText ? config.doneText : "✅ Done"}”. Typing “1,3” works too.`
+          : `Sent as ${mode === "buttons" ? "reply buttons" : mode === "list" ? "a list" : "numbered text"}. Customers can also reply with the option number.`}
       </p>
     </Frame>
   );

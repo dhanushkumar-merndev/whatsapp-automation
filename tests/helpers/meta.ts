@@ -9,6 +9,8 @@ export interface InboundSpec {
   id?: string;
   timestamp?: Date;
   name?: string;
+  /** Body of a non-text message, e.g. { id, mime_type } for an image or { latitude, longitude } for a location. */
+  content?: Record<string, unknown>;
 }
 
 /** Builds a realistic Meta WhatsApp Cloud API webhook payload. */
@@ -30,7 +32,7 @@ export function metaInboundPayload(
         interactive: { type: "list_reply", list_reply: { id: s.replyId, title: s.replyTitle ?? s.replyId } },
       };
     }
-    if (s.type && s.type !== "text") return { ...base, type: s.type, [s.type]: {} };
+    if (s.type && s.type !== "text") return { ...base, type: s.type, [s.type]: s.content ?? {} };
     return { ...base, type: "text", text: { body: s.text ?? "" } };
   });
   return {

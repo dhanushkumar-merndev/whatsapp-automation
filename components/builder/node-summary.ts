@@ -1,6 +1,21 @@
 import type { NodeType } from "@/lib/engine/schema";
 import { OPERATOR_LABELS, prettyRef, waitLabel, type ConditionOperator } from "./labels";
 
+const INPUT_LABELS: Record<string, string> = {
+  number: "a number",
+  email: "an email",
+  phone: "a phone number",
+  date: "a date",
+  url: "a link",
+  media: "a photo or file",
+  location: "a location",
+};
+
+function noReply(c: Record<string, unknown>) {
+  const m = Number(c.timeoutMinutes) || 0;
+  return m > 0 ? ` · no reply after ${m >= 60 && m % 60 === 0 ? `${m / 60}h` : `${m} min`}` : "";
+}
+
 /** One-line description shown on the canvas card. */
 export function nodeSummary(
   type: NodeType,
@@ -21,10 +36,12 @@ export function nodeSummary(
       return c.assetId ? `File: ${names.mediaNames[s(c.assetId)] ?? "selected file"}` : "No file selected yet";
     case "wait":
       return `Wait ${waitLabel(c.amount, c.unit)}`;
-    case "ask_question":
-      return `${s(c.question)} → saved as ${s(c.variable) || "?"}`;
+    case "ask_question": {
+      const type = s(c.inputType) && s(c.inputType) !== "text" ? ` · expects ${INPUT_LABELS[s(c.inputType)] ?? s(c.inputType)}` : "";
+      return `${s(c.question)} → saved as ${s(c.variable) || "?"}${type}${noReply(c)}`;
+    }
     case "interactive":
-      return s(c.body);
+      return `${c.selection === "multiple" ? "Several choices · " : ""}${s(c.body)}${noReply(c)}`;
     case "validation":
       return `Checks ${s(c.variable).replace(/_/g, " ") || "?"} · ${Number(c.maxAttempts) || 0} tries`;
     case "condition": {

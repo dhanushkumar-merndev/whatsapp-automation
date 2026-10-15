@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { INPUT_TYPES } from "./input-types";
 
 /**
  * Flow definition schema. This file is shared by the editor (browser), the
@@ -61,10 +62,22 @@ export const waitConfig = z.object({
   unit: z.enum(["seconds", "minutes", "hours"]).default("seconds"),
 });
 
+/** Minutes before the optional "No reply" branch runs (0 = off). Stays inside the 24-hour window. */
+const timeoutMinutes = z.number().int().min(0).max(23 * 60).default(0);
+
 export const askQuestionConfig = z.object({
   question: messageText,
   variable: variableName,
   leadField: z.enum(LEAD_FIELDS).default("none"),
+  /** What a valid answer looks like; anything but "text" is checked and re-asked. */
+  inputType: z.enum(INPUT_TYPES).default("text"),
+  /** Number answers only. */
+  min: z.number().nullable().default(null),
+  max: z.number().nullable().default(null),
+  /** Sent when the answer doesn't fit inputType (blank = a sensible default). */
+  errorMessage: z.string().max(1024).default(""),
+  maxAttempts: z.number().int().min(1).max(10).default(3),
+  timeoutMinutes,
 });
 
 export const interactiveOption = z.object({
@@ -89,6 +102,13 @@ export const interactiveConfig = z.object({
   options: z.array(interactiveOption).min(1).max(10),
   variable: variableName,
   leadField: z.enum(LEAD_FIELDS).default("none"),
+  /** "multiple": the customer ticks several options in the list and taps Done. */
+  selection: z.enum(["single", "multiple"]).default("single"),
+  minSelect: z.number().int().min(1).max(10).default(1),
+  /** null = no upper limit. Reaching it finishes the selection. */
+  maxSelect: z.number().int().min(1).max(10).nullable().default(null),
+  doneText: z.string().trim().min(1).max(24).default("✅ Done"),
+  timeoutMinutes,
 });
 
 export const validationConfig = z.object({
@@ -187,6 +207,7 @@ export type WaitConfig = NodeConfigMap["wait"];
 export type InteractiveConfig = NodeConfigMap["interactive"];
 export type ValidationConfig = NodeConfigMap["validation"];
 export type ConditionConfig = NodeConfigMap["condition"];
+export type AskQuestionConfig = NodeConfigMap["ask_question"];
 export type SaveLeadConfig = NodeConfigMap["save_lead"];
 
 // --- Graph -----------------------------------------------------------------

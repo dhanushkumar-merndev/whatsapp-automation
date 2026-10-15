@@ -1,5 +1,6 @@
 import { FlowGraph } from "./graph";
-import { buildInteractiveMessage, matchOption } from "./interactive";
+import { applyMultiReply, buildInteractiveMessage, buildMultiMessage, isMultiAnswer, matchOption } from "./interactive";
+import { DEFAULT_INPUT_ERRORS, parseAnswer } from "./input-types";
 import { parseNodeConfig, waitSeconds, type ConditionConfig, type FlowNode, type LeadField } from "./schema";
 import { renderTemplate, stringify, templateVariables, lookup, type TemplateScope } from "./template";
 import { isOptionAnswer, validateAnswer } from "./validate-answer";
@@ -30,6 +31,8 @@ interface RunContext {
   exec: ExecutionRecord;
   /** The customer message being answered; "typing…" is shown on it during short waits. */
   replyTo: string | null;
+  /** One-off line added to the next multiple-choice re-ask (e.g. "Choose at least 2"). */
+  notice?: string;
 }
 
 type NodeResult =
@@ -126,8 +129,8 @@ export async function resumeWithInput(
     return exec;
   }
 
+  await cancelTimeout(ctx, awaiting.timeoutJobId);
   exec.context.vars.last_message = args.input.text;
-  storeAnswer(ctx, question, args.input);
   exec.status = "running";
   exec.awaiting = null;
   await deps.store.logNode({
@@ -140,14 +143,116 @@ export async function resumeWithInput(
     detail: { event: "answer_received", preview: args.input.text.slice(0, 120) },
   });
 
-  if (consumer.id === question.id) {
-    const nextId = graph.next(question.id, "out");
-    if (!nextId || graph.get(nextId)?.type !== "validation") await commitAnswerToLead(ctx, question);
-    await run(ctx, nextId);
-  } else {
+  if (consumer.id !== question.id) {
+    // A Validate step is re-asking: it checks the new answer.
+    storeAnswer(ctx, question, args.input);
     await run(ctx, consumer.id);
+    return ctx.exec;
   }
+
+  if (question.type === "interactive") {
+    const cfg = parseNodeConfig("interactive", question.data.config);
+    if (cfg.selection === "multiple") {
+      const r = applyMultiReply(cfg, exec.context.vars[cfg.variable], args.input);
+      exec.context.vars[cfg.variable] = r.answer;
+      if (!r.done) {
+        // Ask again with the picks ticked (runs the question step once more).
+        ctx.notice = r.notice;
+        await run(ctx, question.id);
+        return ctx.exec;
+      }
+    } else {
+      storeAnswer(ctx, question, args.input);
+    }
+  } else if (question.type === "ask_question") {
+    const cfg = parseNodeConfig("ask_question", question.data.config);
+    if (cfg.inputType === "text") {
+      storeAnswer(ctx, question, args.input);
+    } else {
+      const parsed = parseAnswer(cfg.inputType, args.input, {
+        timezone: deps.settings.business.timezone,
+        now: deps.now(),
+        min: cfg.min,
+        max: cfg.max,
+      });
+      if (!parsed.ok) {
+        const attempts = (exec.context.attempts[question.id] ?? 0) + 1;
+        exec.context.attempts[question.id] = attempts;
+        if (attempts < cfg.maxAttempts) {
+          const since = deps.now().toISOString();
+          const text = renderTemplate(cfg.errorMessage.trim() || DEFAULT_INPUT_ERRORS[cfg.inputType], scope(ctx));
+          const sent = await sendOutbound(ctx, question, { kind: "text", text }, `retry${attempts}`);
+          if (sent === "window_closed") {
+            await finish(ctx, "window_expired");
+            return ctx.exec;
+          }
+          await waitForAnswer(ctx, question.id, question.id, since);
+          exec.lastActivityAt = deps.now().toISOString();
+          await deps.store.saveExecution(exec);
+          return ctx.exec;
+        }
+        // Out of tries: keep what they wrote and take the Failed branch (or carry on).
+        exec.context.attempts[question.id] = 0;
+        exec.context.vars[cfg.variable] = (args.input.replyTitle ?? args.input.text ?? "").trim().slice(0, 4096);
+        const failed = graph.next(question.id, "invalid");
+        if (failed) {
+          await run(ctx, failed);
+          return ctx.exec;
+        }
+      } else {
+        exec.context.attempts[question.id] = 0;
+        exec.context.vars[cfg.variable] = parsed.value;
+      }
+    }
+  }
+
+  const nextId = graph.next(question.id, "out");
+  if (!nextId || graph.get(nextId)?.type !== "validation") await commitAnswerToLead(ctx, question);
+  await run(ctx, nextId);
   return ctx.exec;
+}
+
+/** Runs the question's "No reply" branch when its timer fires and the customer still hasn't answered. */
+export async function resumeAfterTimeout(
+  deps: EngineDeps,
+  args: {
+    execution: ExecutionRecord;
+    version: FlowVersionRecord;
+    conversation: ConversationSnapshot;
+    contact: ContactSnapshot;
+    jobId: string;
+  },
+): Promise<{ execution: ExecutionRecord; resumed: boolean }> {
+  const exec = args.execution;
+  const awaiting = exec.awaiting;
+  if (exec.status !== "waiting_input" || awaiting?.kind !== "input" || awaiting.timeoutJobId !== args.jobId) {
+    return { execution: exec, resumed: false };
+  }
+  const graph = new FlowGraph(args.version.definition);
+  const next = graph.next(awaiting.questionNodeId, "no_reply");
+  if (!next) return { execution: exec, resumed: false };
+  const ctx: RunContext = {
+    deps,
+    graph,
+    version: args.version,
+    conversation: args.conversation,
+    contact: { ...args.contact },
+    exec,
+    replyTo: null,
+  };
+  exec.status = "running";
+  exec.awaiting = null;
+  await deps.store.logNode({
+    executionId: exec.id,
+    nodeId: awaiting.questionNodeId,
+    nodeType: graph.get(awaiting.questionNodeId)?.type ?? "ask_question",
+    step: exec.step,
+    status: "success",
+    outputHandle: "no_reply",
+    detail: { event: "no_reply" },
+  });
+  await run(ctx, next);
+  return { execution: ctx.exec, resumed: true };
 }
 
 /** Continue after a Wait node once its QStash job fires. */
@@ -371,6 +476,50 @@ async function sendOutbound(ctx: RunContext, node: FlowNode, message: OutboundMe
   }
 }
 
+/**
+ * Puts the execution in waiting_input for `questionNodeId` and, when that
+ * question has a connected "No reply" branch, schedules its timer.
+ */
+async function waitForAnswer(ctx: RunContext, nodeId: string, questionNodeId: string, since: string) {
+  const { deps, exec, graph } = ctx;
+  exec.status = "waiting_input";
+  let timeoutJobId: string | null = null;
+  const question = graph.get(questionNodeId);
+  const minutes = Number((question?.data.config as { timeoutMinutes?: number } | undefined)?.timeoutMinutes ?? 0);
+  if (question && minutes > 0 && graph.next(question.id, "no_reply")) {
+    const runAt = new Date(deps.now().getTime() + minutes * 60_000).toISOString();
+    const { job, created } = await deps.store.createScheduledJob({
+      kind: "input_timeout",
+      executionId: exec.id,
+      conversationId: ctx.conversation.id,
+      nodeId: question.id,
+      crmDeliveryId: null,
+      flowId: exec.flowId,
+      runAt,
+      idempotencyKey: `${exec.id}:${question.id}:timeout:${since}`,
+      isTest: exec.isTest,
+    });
+    if (created) {
+      const { messageId } = await deps.scheduler.schedule({ jobId: job.id, delaySeconds: minutes * 60 });
+      await deps.store.attachJobMessage(job.id, messageId);
+    }
+    timeoutJobId = job.id;
+  }
+  exec.awaiting = { kind: "input", nodeId, questionNodeId, since, timeoutJobId };
+}
+
+/** The customer answered: their "No reply" timer is no longer needed. */
+async function cancelTimeout(ctx: RunContext, jobId: string | null | undefined) {
+  if (!jobId) return;
+  const qstashId = await ctx.deps.store.cancelScheduledJob(jobId);
+  if (!qstashId) return;
+  try {
+    await ctx.deps.scheduler.cancel(qstashId);
+  } catch (e) {
+    ctx.deps.logger.warn("could not cancel QStash message", { qstashId, error: e instanceof Error ? e.message : String(e) });
+  }
+}
+
 /** Re-shows "typing…" on the customer's message. Best effort: never fails the step. */
 async function showTyping(ctx: RunContext) {
   const { sender } = ctx.deps;
@@ -484,20 +633,27 @@ async function executeNode(ctx: RunContext, node: FlowNode): Promise<NodeResult>
       const outcome = await sendOutbound(ctx, node, { kind: "text", text: renderTemplate(cfg.question, scope(ctx)) });
       if (outcome === "window_closed") return windowStop();
       exec.context.lastQuestionNodeId = node.id;
-      exec.status = "waiting_input";
-      exec.awaiting = { kind: "input", nodeId: node.id, questionNodeId: node.id, since };
-      return { type: "wait", detail: { outcome, variable: cfg.variable } };
+      await waitForAnswer(ctx, node.id, node.id, since);
+      return { type: "wait", detail: { outcome, variable: cfg.variable, inputType: cfg.inputType } };
     }
 
     case "interactive": {
       const cfg = parseNodeConfig("interactive", node.data.config);
       const since = deps.now().toISOString();
-      const outcome = await sendOutbound(ctx, node, buildInteractiveMessage(cfg, scope(ctx)));
+      const multiple = cfg.selection === "multiple";
+      // A fresh ask starts with nothing ticked; a re-ask keeps the picks so far.
+      const current = exec.context.vars[cfg.variable];
+      if (multiple && (!isMultiAnswer(current) || current.done)) delete exec.context.vars[cfg.variable];
+      const picks = exec.context.vars[cfg.variable];
+      const message = multiple
+        ? buildMultiMessage(cfg, scope(ctx), isMultiAnswer(picks) ? picks.ids : [], ctx.notice)
+        : buildInteractiveMessage(cfg, scope(ctx));
+      ctx.notice = undefined;
+      const outcome = await sendOutbound(ctx, node, message);
       if (outcome === "window_closed") return windowStop();
       exec.context.lastQuestionNodeId = node.id;
-      exec.status = "waiting_input";
-      exec.awaiting = { kind: "input", nodeId: node.id, questionNodeId: node.id, since };
-      return { type: "wait", detail: { outcome, variable: cfg.variable } };
+      await waitForAnswer(ctx, node.id, node.id, since);
+      return { type: "wait", detail: { outcome, variable: cfg.variable, ...(multiple ? { multiple } : {}) } };
     }
 
     case "validation": {
@@ -519,8 +675,7 @@ async function executeNode(ctx: RunContext, node: FlowNode): Promise<NodeResult>
       const since = deps.now().toISOString();
       const sent = await sendOutbound(ctx, node, { kind: "text", text: renderTemplate(cfg.errorMessage, scope(ctx)) }, `retry${attempts}`);
       if (sent === "window_closed") return windowStop();
-      exec.status = "waiting_input";
-      exec.awaiting = { kind: "input", nodeId: node.id, questionNodeId, since };
+      await waitForAnswer(ctx, node.id, questionNodeId, since);
       return { type: "wait", detail: { reason: outcome.reason, attempts, maxAttempts: cfg.maxAttempts } };
     }
 
@@ -670,8 +825,10 @@ function evaluateCondition(ctx: RunContext, cfg: ConditionConfig): boolean {
   const r = cfg.caseSensitive ? right : right.toLowerCase();
   switch (cfg.operator) {
     case "equals":
-    case "option_selected":
       return l.trim() === r.trim();
+    case "option_selected":
+      // Several ids ("web,ads") when the question allowed more than one choice.
+      return l.split(",").some((id) => id.trim() === r.trim());
     case "not_equals":
       return l.trim() !== r.trim();
     case "contains":

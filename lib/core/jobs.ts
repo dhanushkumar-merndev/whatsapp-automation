@@ -1,4 +1,4 @@
-import { resumeAfterDelay } from "@/lib/engine/runner";
+import { resumeAfterDelay, resumeAfterTimeout } from "@/lib/engine/runner";
 import { attemptCrmDelivery } from "@/lib/engine/crm-attempt";
 import type { ScheduledJobRecord } from "@/lib/engine/types";
 import { processConversation, type PipelineDeps } from "./process-conversation";
@@ -28,7 +28,8 @@ export async function handleScheduledJob(
   if (job.status !== "scheduled" && job.status !== "running") return { status: "skipped", detail: `job_${job.status}` };
 
   if (job.kind === "crm_retry") return runCrmRetry(deps, job);
-  return runFlowResume(deps, job, opts.lockWaitMs ?? 8000);
+  if (job.kind === "flow_resume" || job.kind === "input_timeout") return runFlowResume(deps, job, opts.lockWaitMs ?? 8000);
+  return { status: "skipped", detail: `unsupported_${job.kind}` };
 }
 
 async function runFlowResume(deps: PipelineDeps, job: ScheduledJobRecord, lockWaitMs: number): Promise<JobOutcome> {
@@ -75,7 +76,8 @@ async function resumeClaimed(deps: PipelineDeps, job: ScheduledJobRecord): Promi
     job.flowId ? store.getFlowStatus(job.flowId) : null,
     store.getConversationContext(job.conversationId!),
   ]);
-  if (!exec || exec.status !== "waiting_delay") {
+  const expected = job.kind === "input_timeout" ? "waiting_input" : "waiting_delay";
+  if (!exec || exec.status !== expected) {
     await store.finishScheduledJob(job.id, "skipped", `execution_${exec?.status ?? "missing"}`);
     return { status: "skipped", detail: `execution_${exec?.status ?? "missing"}` };
   }
@@ -96,13 +98,8 @@ async function resumeClaimed(deps: PipelineDeps, job: ScheduledJobRecord): Promi
   }
   const version = await store.getFlowVersion(exec.flowVersionId);
   if (!version) throw new Error("Flow version missing");
-  const { execution, resumed } = await resumeAfterDelay(deps, {
-    execution: exec,
-    version,
-    conversation: ctx.conversation,
-    contact: ctx.contact,
-    jobId: job.id,
-  });
+  const args = { execution: exec, version, conversation: ctx.conversation, contact: ctx.contact, jobId: job.id };
+  const { execution, resumed } = job.kind === "input_timeout" ? await resumeAfterTimeout(deps, args) : await resumeAfterDelay(deps, args);
   await store.finishScheduledJob(job.id, resumed ? "completed" : "skipped", resumed ? null : "not_resumable");
   return { status: resumed ? "done" : "skipped", detail: execution.status };
 }

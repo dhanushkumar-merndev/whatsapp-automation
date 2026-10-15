@@ -26,6 +26,28 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+/** One stored answer: plain text, a choice, a date, a customer file or a location. */
+function AnswerValue({ value }: { value: unknown }) {
+  if (value === null || value === undefined || value === "") return <>—</>;
+  if (typeof value !== "object") return <>{String(value)}</>;
+  const v = value as { kind?: string; title?: string; messageId?: string | null; mapUrl?: string; raw?: string };
+  if (v.kind === "media" && v.messageId) {
+    return (
+      <a className="underline" href={`/api/inbound-media/${encodeURIComponent(v.messageId)}`} target="_blank" rel="noreferrer">
+        {v.title ?? "Open file"}
+      </a>
+    );
+  }
+  if (v.kind === "location" && v.mapUrl) {
+    return (
+      <a className="underline" href={v.mapUrl} target="_blank" rel="noreferrer">
+        {v.title}
+      </a>
+    );
+  }
+  return <>{v.title ?? v.raw ?? "—"}</>;
+}
+
 export default async function LeadPage({ params }: PageProps<"/leads/[id]">) {
   const session = await requirePageSession("staff");
   const { id } = await params;
@@ -59,7 +81,11 @@ export default async function LeadPage({ params }: PageProps<"/leads/[id]">) {
     const parsed = flowDefinitionSchema.safeParse(v?.definition);
     if (parsed.success) definition = parsed.data;
   }
-  const ctx = (execution?.context ?? {}) as { path?: string[] };
+  const ctx = (execution?.context ?? {}) as { path?: string[]; vars?: Record<string, unknown> };
+  // Everything the customer answered in this enquiry (internal and message bookkeeping left out).
+  const answers = Object.entries({ ...(ctx.vars ?? {}), ...((lead.answers as Record<string, unknown> | null) ?? {}) }).filter(
+    ([k]) => !k.startsWith("__") && k !== "first_message" && k !== "last_message",
+  );
   const active = execution && ["running", "waiting_input", "waiting_delay"].includes(execution.status);
 
   return (
@@ -118,6 +144,19 @@ export default async function LeadPage({ params }: PageProps<"/leads/[id]">) {
           </CardContent>
         </Card>
       </div>
+
+      {answers.length > 0 && (
+        <Card className="mt-4">
+          <CardHeader>
+            <CardTitle className="text-sm">All answers</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {answers.map(([k, v]) => (
+              <Field key={k} label={k.replace(/_/g, " ")} value={<AnswerValue value={v} />} />
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="mt-4">
         <CardHeader>

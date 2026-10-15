@@ -13,7 +13,7 @@ describe("workflow JSON import", () => {
     expect(r.issues.filter((i) => i.level === "error")).toEqual([]);
     expect(r.name).toBe("Website enquiry");
     expect(r.definition!.nodes).toHaveLength(AI_PROMPT_EXAMPLE.steps.length);
-    expect(r.definition!.edges.find((e) => e.source === "check_name" && e.sourceHandle === "invalid")?.target).toBe("to_team");
+    expect(r.definition!.edges.find((e) => e.source === "ask_email" && e.sourceHandle === "invalid")?.target).toBe("to_team");
     // Laid out top to bottom.
     const y = (id: string) => r.definition!.nodes.find((n) => n.id === id)!.position.y;
     expect(y("start")).toBeLessThan(y("welcome"));
@@ -98,5 +98,6 @@ describe("ChatGPT prompt", () => {
     expect(prompt).toContain('"HubSpot"');
     expect(prompt).not.toContain("Old CRM");
     expect(prompt).toContain('"next": { "valid": "<step id>", "invalid": "<step id>" }');
+    expect(prompt).toContain('"next": { "out": "<step id>", "invalid": "<step id>", "no_reply": "<step id>" }');
   });
 });

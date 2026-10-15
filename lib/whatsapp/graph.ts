@@ -146,6 +146,23 @@ export class MetaSender implements MessageSender {
   }
 }
 
+/**
+ * Downloads a photo/file a customer sent (Meta keeps it for about 30 days).
+ * The media URL Meta returns needs the same access token and expires in minutes,
+ * so it is fetched and streamed straight through.
+ */
+export async function fetchInboundMedia(mediaId: string): Promise<{ body: ReadableStream<Uint8Array>; contentType: string }> {
+  const info = (await graphFetch(encodeURIComponent(mediaId), { method: "GET" }, 1)) as { url?: string; mime_type?: string };
+  if (!info.url) throw new SendError("Meta returned no download link for this file");
+  const res = await fetch(info.url, {
+    headers: { Authorization: `Bearer ${serverEnv().META_ACCESS_TOKEN}` },
+    signal: AbortSignal.timeout(20_000),
+    cache: "no-store",
+  });
+  if (!res.ok || !res.body) throw new SendError(`Could not download the file (HTTP ${res.status})`);
+  return { body: res.body, contentType: info.mime_type ?? res.headers.get("content-type") ?? "application/octet-stream" };
+}
+
 /** Reads phone number details for the WhatsApp Accounts page ("Test connection"). */
 export async function fetchPhoneNumberInfo(phoneNumberId: string) {
   const res = await graphFetch(

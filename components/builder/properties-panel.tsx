@@ -5,9 +5,10 @@ import { AlertTriangle, ArrowDown, ArrowUp, CircleX, Copy, ExternalLink, Plus, T
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CopyButton } from "@/components/common/copy-button";
-import { NODE_REGISTRY } from "@/lib/engine/registry";
+import { NODE_REGISTRY, outputsFor } from "@/lib/engine/registry";
+import { DEFAULT_INPUT_ERRORS, type InputType } from "@/lib/engine/input-types";
 import { LEAD_FIELDS, safeParseNodeConfig, type FlowDefinition, type InteractiveOption, type NodeType } from "@/lib/engine/schema";
-import { WA_LIMITS } from "@/lib/engine/interactive";
+import { MAX_MULTI_OPTIONS, WA_LIMITS } from "@/lib/engine/interactive";
 import type { GraphIssue } from "@/lib/engine/validate-graph";
 import { listFlowVariables, type FlowVariable } from "@/lib/engine/variables";
 import { cn } from "@/lib/utils";
@@ -128,7 +129,7 @@ function answerName(template: string): string | null {
 
 /** Where each branch of a step goes, e.g. "Yes → Send brochure". */
 function Branches({ nodeId, type, definition }: { nodeId: string; type: NodeType; definition: FlowDefinition }) {
-  const outputs = NODE_REGISTRY[type].outputs;
+  const outputs = outputsFor(type, definition.nodes.find((n) => n.id === nodeId)?.data.config);
   return (
     <Section title="Then">
       <div className="divide-y rounded-2xl border">
@@ -151,6 +152,30 @@ function Branches({ nodeId, type, definition }: { nodeId: string; type: NodeType
         })}
       </div>
     </Section>
+  );
+}
+
+const INPUT_TYPE_OPTIONS: { value: InputType; label: string }[] = [
+  { value: "text", label: "Any text" },
+  { value: "number", label: "A number" },
+  { value: "email", label: "An email address" },
+  { value: "phone", label: "A phone number" },
+  { value: "date", label: "A date (25/10, tomorrow, Monday…)" },
+  { value: "url", label: "A website link" },
+  { value: "media", label: "A photo or file" },
+  { value: "location", label: "A location pin" },
+];
+
+/** "If no reply after N minutes" → the question's "No reply" branch. */
+function NoReplyField({ c, set }: { c: Config; set: (p: Config) => void }) {
+  const minutes = typeof c.timeoutMinutes === "number" ? c.timeoutMinutes : 0;
+  return (
+    <Field
+      label="If there's no reply"
+      help="After this long, the “No reply” branch runs (e.g. a friendly reminder). 0 = wait forever. Max 23 hours, inside WhatsApp's 24-hour window."
+    >
+      <NumberField value={minutes} onChange={(v) => set({ timeoutMinutes: v ?? 0 })} min={0} max={1380} suffix="minutes" />
+    </Field>
   );
 }
 
@@ -368,15 +393,43 @@ function NodeForm({
       );
     }
 
-    case "ask_question":
+    case "ask_question": {
+      const inputType = (str("inputType") || "text") as InputType;
       return (
         <div className="space-y-5">
           <Field label="Question" error={errors.get("question")}>
             <MessageField value={str("question")} onChange={(v) => set({ question: v })} rows={3} placeholder="What would you like to ask?" />
           </Field>
+          <Field label="Answer should be" help="Anything except “Any text” is checked, and the customer is asked again if it doesn't fit.">
+            <SelectField value={inputType} onChange={(v) => set({ inputType: v })} options={INPUT_TYPE_OPTIONS} />
+          </Field>
+          {inputType === "number" && (
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Smallest">
+                <NumberField value={num("min")} onChange={(v) => set({ min: v })} allowNull placeholder="Any" />
+              </Field>
+              <Field label="Largest">
+                <NumberField value={num("max")} onChange={(v) => set({ max: v })} allowNull placeholder="Any" />
+              </Field>
+            </div>
+          )}
+          {inputType !== "text" && (
+            <>
+              <Field label="Reply when it doesn't fit" help="Leave empty for the friendly default shown.">
+                <MessageField value={str("errorMessage")} onChange={(v) => set({ errorMessage: v })} rows={2} placeholder={DEFAULT_INPUT_ERRORS[inputType]} />
+              </Field>
+              <Field label="Tries before giving up" help="Then the “Failed” branch runs. If it isn't connected, the flow carries on with what they wrote.">
+                <NumberField value={num("maxAttempts")} onChange={(v) => set({ maxAttempts: v ?? 3 })} min={1} max={10} />
+              </Field>
+            </>
+          )}
+          {inputType === "media" && <Note>Photos and files can be viewed from the conversation and the lead.</Note>}
           <SaveAnswerFields c={c} set={set} errors={errors} />
+          <NoReplyField c={c} set={set} />
+          {outputsFor("ask_question", c).length > 1 && <Branches nodeId={nodeId} type={type} definition={definition} />}
         </div>
       );
+    }
 
     case "interactive": {
       const options = (c.options as InteractiveOption[]) ?? [];
@@ -398,6 +451,34 @@ function NodeForm({
           <Field label="Message" error={errors.get("body")}>
             <MessageField value={str("body")} onChange={(v) => set({ body: v })} rows={3} maxLength={1024} placeholder="Please choose an option:" />
           </Field>
+          <Field label="Customer can choose">
+            <Chips
+              value={c.selection === "multiple" ? "multiple" : "single"}
+              onChange={(v) => set({ selection: v })}
+              options={[
+                { value: "single", label: "One option" },
+                { value: "multiple", label: "Several options" },
+              ]}
+            />
+          </Field>
+          {c.selection === "multiple" && (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="At least">
+                  <NumberField value={num("minSelect") ?? 1} onChange={(v) => set({ minSelect: v ?? 1 })} min={1} max={10} />
+                </Field>
+                <Field label="At most">
+                  <NumberField value={num("maxSelect")} onChange={(v) => set({ maxSelect: v })} min={1} max={10} allowNull placeholder="Any" />
+                </Field>
+              </div>
+              <Field label="Finish button" help="Last row of the list. Customers tick options, then tap it.">
+                <TextField value={str("doneText")} onChange={(v) => set({ doneText: v })} maxLength={24} />
+              </Field>
+              {options.length > MAX_MULTI_OPTIONS && (
+                <Note tone="warning">With more than {MAX_MULTI_OPTIONS} options the question is sent as numbered text (the list needs one row for “Done”).</Note>
+              )}
+            </>
+          )}
           <Section
             title={`Options · ${options.length}/${WA_LIMITS.maxListRows}`}
             aside={
@@ -452,6 +533,8 @@ function NodeForm({
           </Section>
           <InteractivePreview config={c} />
           <SaveAnswerFields c={c} set={set} errors={errors} />
+          <NoReplyField c={c} set={set} />
+          {outputsFor("interactive", c).length > 1 && <Branches nodeId={nodeId} type={type} definition={definition} />}
           <Advanced>
             <div className="grid grid-cols-2 gap-2">
               <Field label="Header">

@@ -1,7 +1,7 @@
 import type { Edge, Node } from "@xyflow/react";
 import { MarkerType } from "@xyflow/react";
 import dagre from "@dagrejs/dagre";
-import { NODE_REGISTRY } from "@/lib/engine/registry";
+import { NODE_REGISTRY, outputsFor } from "@/lib/engine/registry";
 import type { FlowDefinition, NodeType } from "@/lib/engine/schema";
 
 export interface FlowNodeData extends Record<string, unknown> {
@@ -141,7 +141,7 @@ export function findFreeSpot(start: Point, nodes: EditorNode[]): Point {
 
 /** Position for a step added after `source` on `handle`; branches fan out left/right. */
 export function placeBelow(source: EditorNode, handle: string, nodes: EditorNode[]): Point {
-  const outputs = NODE_REGISTRY[source.data.nodeType].outputs;
+  const outputs = outputsFor(source.data.nodeType, source.data.config);
   const idx = Math.max(0, outputs.findIndex((o) => o.id === handle));
   const { w, h } = sizeOf(source);
   const spread = outputs.length > 1 ? (idx - (outputs.length - 1) / 2) * (NODE_WIDTH + GAP_X) : 0;

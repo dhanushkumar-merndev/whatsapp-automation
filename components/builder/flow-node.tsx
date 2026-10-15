@@ -5,7 +5,7 @@ import { Handle, NodeToolbar, Position, type NodeProps } from "@xyflow/react";
 import { AlertTriangle, Copy, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { NODE_REGISTRY } from "@/lib/engine/registry";
+import { NODE_REGISTRY, outputsFor } from "@/lib/engine/registry";
 import { cn } from "@/lib/utils";
 import { NODE_ICONS } from "./node-icons";
 import { nodeSummary } from "./node-summary";
@@ -57,7 +57,7 @@ function FlowNodeComponent({ id, data, selected }: NodeProps<EditorNode>) {
   const Icon = NODE_ICONS[data.nodeType];
   const ctx = useEditorContext();
   const { actions } = ctx;
-  const outputs = def.outputs;
+  const outputs = outputsFor(data.nodeType, data.config);
   const connected = new Set(data.connected ?? []);
   const summary = nodeSummary(data.nodeType, data.config, ctx);
   const options = data.nodeType === "interactive" ? ((data.config.options as { id: string; title: string }[]) ?? []) : [];

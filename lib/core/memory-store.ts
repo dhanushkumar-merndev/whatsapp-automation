@@ -656,6 +656,14 @@ export class MemoryStore implements AppStore {
     if (j) j.qstashMessageId = qstashMessageId;
   }
 
+  async cancelScheduledJob(jobId: string) {
+    const j = this.jobs.get(jobId);
+    if (!j || j.status !== "scheduled") return null;
+    j.status = "cancelled";
+    j.lastError = "not_needed";
+    return j.qstashMessageId;
+  }
+
   async finishScheduledJob(jobId: string, status: ScheduledJobStatus, error?: string | null) {
     const j = this.jobs.get(jobId);
     if (j) {

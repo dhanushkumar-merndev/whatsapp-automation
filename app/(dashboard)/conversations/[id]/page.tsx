@@ -35,6 +35,33 @@ function OutboundExtras({ payload }: { payload: unknown }) {
   );
 }
 
+/** A customer's photo (shown inline), other files (link) or location (map link). */
+function InboundExtras({ type, waMessageId, payload }: { type: string; waMessageId: string | null; payload: unknown }) {
+  const p = (payload ?? {}) as { media_id?: string; location?: { latitude?: number; longitude?: number } };
+  if (p.location && Number.isFinite(p.location.latitude) && Number.isFinite(p.location.longitude)) {
+    return (
+      <a className="mt-1 block text-xs underline" href={`https://maps.google.com/?q=${p.location.latitude},${p.location.longitude}`} target="_blank" rel="noreferrer">
+        Open in Maps
+      </a>
+    );
+  }
+  if (!p.media_id || !waMessageId) return null;
+  const src = `/api/inbound-media/${encodeURIComponent(waMessageId)}`;
+  if (type === "image" || type === "sticker") {
+    return (
+      <a href={src} target="_blank" rel="noreferrer" className="mt-1.5 block">
+        {/* eslint-disable-next-line @next/next/no-img-element -- private, auth-checked file */}
+        <img src={src} alt="Photo from the customer" className="max-h-64 rounded-2xl" loading="lazy" />
+      </a>
+    );
+  }
+  return (
+    <a className="mt-1 block text-xs underline" href={src} target="_blank" rel="noreferrer">
+      Open {type === "document" ? "file" : type}
+    </a>
+  );
+}
+
 export default async function ConversationPage({ params }: PageProps<"/conversations/[id]">) {
   await requirePageSession("staff");
   const { id } = await params;
@@ -61,7 +88,7 @@ export default async function ConversationPage({ params }: PageProps<"/conversat
   const [{ data: messages }, { data: executions }, { data: leads }] = await Promise.all([
     supabase
       .from("messages")
-      .select("id, direction, type, body, payload, status, processing_status, processing_note, created_at, sent_by, error")
+      .select("id, direction, type, body, payload, status, processing_status, processing_note, created_at, sent_by, error, wa_message_id")
       .eq("conversation_id", id)
       .order("created_at", { ascending: true })
       .limit(300),
@@ -119,6 +146,7 @@ export default async function ConversationPage({ params }: PageProps<"/conversat
                       >
                         {m.body ?? <span className="italic opacity-70">[{m.type}]</span>}
                         {m.direction === "outbound" && <OutboundExtras payload={m.payload} />}
+                        {m.direction === "inbound" && <InboundExtras type={m.type} waMessageId={m.wa_message_id} payload={m.payload} />}
                       </div>
                       <div className={cn("mt-0.5 px-2 text-[10px] text-muted-foreground", m.direction === "outbound" && "text-right")}>
                         {fmtDate(m.created_at, "d MMM, HH:mm")}

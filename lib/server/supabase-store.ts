@@ -797,6 +797,19 @@ export class SupabaseStore implements AppStore {
     check(await this.db.from("scheduled_jobs").update({ qstash_message_id: qstashMessageId }).eq("id", jobId), "attach job message");
   }
 
+  async cancelScheduledJob(jobId: string) {
+    const rows = check(
+      await this.db
+        .from("scheduled_jobs")
+        .update({ status: "cancelled", last_error: "not_needed" })
+        .eq("id", jobId)
+        .eq("status", "scheduled")
+        .select("qstash_message_id"),
+      "cancel job",
+    );
+    return (rows?.[0]?.qstash_message_id as string | null) ?? null;
+  }
+
   async finishScheduledJob(jobId: string, status: ScheduledJobStatus, error?: string | null) {
     check(await this.db.from("scheduled_jobs").update({ status, last_error: error ?? null }).eq("id", jobId), "finish job");
   }

@@ -56,7 +56,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { StatusBadge } from "@/components/common/status-badge";
 import { useConfirm } from "@/components/common/confirm-dialog";
-import { NODE_REGISTRY } from "@/lib/engine/registry";
+import { NODE_REGISTRY, outputsFor } from "@/lib/engine/registry";
 import type { FlowDefinition, NodeType } from "@/lib/engine/schema";
 import { validateFlow } from "@/lib/engine/validate-graph";
 import type { AppSettings } from "@/lib/settings/schema";
@@ -406,7 +406,7 @@ function EditorInner({ flow, versions, media, crm, settings }: FlowEditorProps) 
       const sel = nds.filter((n) => n.selected);
       if (NODE_REGISTRY[type].hasInput && sel.length === 1) {
         const used = new Set(eds.filter((e) => e.source === sel[0].id).map((e) => e.sourceHandle ?? "out"));
-        const free = NODE_REGISTRY[sel[0].data.nodeType].outputs.find((o) => !used.has(o.id));
+        const free = outputsFor(sel[0].data.nodeType, sel[0].data.config).find((o) => !used.has(o.id));
         if (free) return actions.addAfter(sel[0].id, free.id, type);
       }
       const rect = canvasRef.current?.getBoundingClientRect();

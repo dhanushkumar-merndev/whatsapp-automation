@@ -1,6 +1,6 @@
 import dagre from "@dagrejs/dagre";
 import { z } from "zod";
-import { NODE_REGISTRY } from "@/lib/engine/registry";
+import { NODE_REGISTRY, outputsFor } from "@/lib/engine/registry";
 import { flowDefinitionSchema, NODE_TYPES, type FlowDefinition, type FlowEdge, type FlowNode, type NodeType } from "@/lib/engine/schema";
 import { validateFlow, type GraphIssue } from "@/lib/engine/validate-graph";
 
@@ -173,7 +173,7 @@ export function importFlowJson(text: string): ImportResult {
 export function exportFlowJson(definition: FlowDefinition, meta: { name: string; description?: string | null }): string {
   const steps = definition.nodes.map((n) => {
     const outs = definition.edges.filter((e) => e.source === n.id);
-    const outputs = NODE_REGISTRY[n.type].outputs.map((o) => o.id);
+    const outputs = outputsFor(n.type, n.data.config).map((o) => o.id);
     let next: string | Record<string, string> | undefined;
     if (outs.length) {
       next =

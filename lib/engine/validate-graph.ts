@@ -1,5 +1,6 @@
 import { FlowGraph } from "./graph";
-import { NODE_REGISTRY } from "./registry";
+import { NODE_REGISTRY, outputsFor } from "./registry";
+import { MAX_MULTI_OPTIONS } from "./interactive";
 import { safeParseNodeConfig, type FlowDefinition, type NodeType } from "./schema";
 import { checkPattern } from "./validate-answer";
 import { templateVariables } from "./template";
@@ -52,8 +53,17 @@ export function validateFlow(def: FlowDefinition): GraphValidation {
     if (e.source === e.target) err("A node cannot connect to itself.", e.source);
     const source = graph.get(e.source)!;
     const handle = e.sourceHandle ?? "out";
-    const outputs = NODE_REGISTRY[source.type].outputs.map((o) => o.id);
-    if (!outputs.includes(handle)) err(`“${label(source.id)}” has no output named “${handle}”.`, source.id);
+    const outputs = outputsFor(source.type, source.data.config).map((o) => o.id);
+    if (!outputs.includes(handle)) {
+      err(
+        handle === "no_reply"
+          ? `“${label(source.id)}” has a “No reply” connection but no reply timer is set.`
+          : handle === "invalid" && source.type === "ask_question"
+            ? `“${label(source.id)}” has a “Failed” connection, but plain text answers are never rejected. Choose an answer type or remove it.`
+            : `“${label(source.id)}” has no output named “${handle}”.`,
+        source.id,
+      );
+    }
     const key = `${e.source}:${handle}`;
     if (seenHandles.has(key)) err(`“${label(source.id)}” has more than one connection from the same output.`, source.id);
     seenHandles.add(key);
@@ -74,6 +84,18 @@ export function validateFlow(def: FlowDefinition): GraphValidation {
       const opts = cfg.options as { id: string }[];
       const dupes = opts.map((o) => o.id).filter((id, i, a) => a.indexOf(id) !== i);
       if (dupes.length) err(`“${label(n.id)}”: option IDs must be unique (${[...new Set(dupes)].join(", ")}).`, n.id);
+      if (cfg.selection === "multiple") {
+        const min = cfg.minSelect as number;
+        const max = cfg.maxSelect as number | null;
+        if (opts.length > MAX_MULTI_OPTIONS && cfg.mode !== "text") {
+          warn(`“${label(n.id)}”: more than ${MAX_MULTI_OPTIONS} options can't fit in a list with “Done”, so they are sent as numbered text.`, n.id);
+        }
+        if (min > opts.length) err(`“${label(n.id)}”: at least ${min} choices are required but there are only ${opts.length} options.`, n.id);
+        if (max !== null && max < min) err(`“${label(n.id)}”: the maximum number of choices is lower than the minimum.`, n.id);
+      }
+    }
+    if (n.type === "ask_question" && cfg.inputType === "number" && cfg.min !== null && cfg.max !== null && (cfg.min as number) > (cfg.max as number)) {
+      err(`“${label(n.id)}”: the smallest allowed number is greater than the largest.`, n.id);
     }
     if (n.type === "validation") {
       const patternError = checkPattern(cfg.pattern as string);
@@ -94,9 +116,13 @@ export function validateFlow(def: FlowDefinition): GraphValidation {
 
   // Outputs connected? -------------------------------------------------------------
   for (const n of def.nodes) {
-    const def_ = NODE_REGISTRY[n.type];
-    for (const out of def_.outputs) {
+    for (const out of outputsFor(n.type, n.data.config)) {
       if (graph.next(n.id, out.id)) continue;
+      if (out.id === "no_reply") {
+        warn(`“${label(n.id)}”: a reply timer is set, but nothing is connected to “No reply”.`, n.id);
+        continue;
+      }
+      if (out.optional) continue;
       if (n.type === "validation" && out.id === "invalid") {
         warn(`“${label(n.id)}”: the “Failed” branch is not connected — the flow will end. Consider a Human handoff.`, n.id);
       } else if (n.type === "condition") {

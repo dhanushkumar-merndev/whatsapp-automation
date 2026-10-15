@@ -41,6 +41,12 @@ export const appSettingsSchema = z.object({
         .prefault({}),
     })
     .prefault({}),
+  business: z
+    .object({
+      /** Used for dates in answers, bookings and business hours. */
+      timezone: z.string().max(60).default("Asia/Kolkata"),
+    })
+    .prefault({}),
   /** E.164 digits without "+" — conversations from these numbers are marked as tests. */
   testPhoneNumbers: z.array(z.string().regex(/^\d{6,15}$/)).max(20).default([]),
   window: z

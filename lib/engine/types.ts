@@ -27,6 +27,9 @@ export interface InboundInput {
   replyId?: string;
   replyTitle?: string;
   messageId?: string;
+  /** Photo, file, video, voice note or sticker. */
+  media?: { type: string; mediaId: string | null; mimeType: string | null; filename: string | null; caption: string | null };
+  location?: { latitude: number; longitude: number; name: string | null; address: string | null };
 }
 
 export type OutboundMessage =
@@ -85,7 +88,7 @@ export interface ExecutionContext {
 
 export type Awaiting =
   /** `since`: when the question was sent; messages written before it are not taken as the answer. */
-  | { kind: "input"; nodeId: string; questionNodeId: string; since?: string }
+  | { kind: "input"; nodeId: string; questionNodeId: string; since?: string; timeoutJobId?: string | null }
   | { kind: "delay"; nodeId: string; jobId: string | null };
 
 export interface ExecutionRecord {
@@ -193,7 +196,7 @@ export interface LeadRecord {
   updatedAt: string;
 }
 
-export type ScheduledJobKind = "flow_resume" | "crm_retry";
+export type ScheduledJobKind = "flow_resume" | "crm_retry" | "input_timeout" | "booking_reminder";
 export type ScheduledJobStatus = "scheduled" | "running" | "completed" | "cancelled" | "failed" | "skipped";
 
 export interface ScheduledJobRecord {
@@ -347,6 +350,8 @@ export interface EngineStore {
     isTest: boolean;
   }): Promise<{ job: ScheduledJobRecord; created: boolean }>;
   attachJobMessage(jobId: string, qstashMessageId: string | null): Promise<void>;
+  /** Cancels a job that is still scheduled; returns its QStash message id to cancel there too. */
+  cancelScheduledJob(jobId: string): Promise<string | null>;
   finishScheduledJob(jobId: string, status: ScheduledJobStatus, error?: string | null): Promise<void>;
 
   notify(input: NotificationInput): Promise<void>;

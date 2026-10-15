@@ -1,5 +1,5 @@
 import type { ValidationConfig } from "./schema";
-import type { OptionAnswer } from "./interactive";
+import { isMultiAnswer, type OptionAnswer } from "./interactive";
 
 export type ValidationOutcome = { valid: true } | { valid: false; reason: string };
 
@@ -16,6 +16,13 @@ export function isOptionAnswer(v: unknown): v is OptionAnswer {
 
 /** Validate a stored answer. Interactive answers are checked against option ids. */
 export function validateAnswer(cfg: ValidationConfig, value: unknown): ValidationOutcome {
+  if (isMultiAnswer(value)) {
+    if (!value.matched || value.ids.length === 0) return { valid: false, reason: "not_an_option" };
+    if (cfg.allowedOptionIds.length > 0 && !value.ids.every((id) => cfg.allowedOptionIds.includes(id))) {
+      return { valid: false, reason: "option_not_allowed" };
+    }
+    return { valid: true };
+  }
   if (isOptionAnswer(value)) {
     if (!value.matched || !value.id) return { valid: false, reason: "not_an_option" };
     if (cfg.allowedOptionIds.length > 0 && !cfg.allowedOptionIds.includes(value.id)) {
