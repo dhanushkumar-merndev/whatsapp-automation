@@ -21,10 +21,10 @@
 | 15 | Failed CRM deliveries retried safely | "15. …" (stable event id, QStash retry) | |
 | 16 | Editor can save, test and publish | Server actions + simulator use the same engine (all engine tests) | Flow Builder: Save draft → Test tab → Publish |
 | 17 | Draft changes don't corrupt running flows | "17. …"; DB test "published versions are immutable" | |
-| 18 | Estimator recalculates on node/volume changes | `tests/unit/estimator.test.ts` → "recalculates when …" | Usage tab updates live |
-| 19 | Projected overage shows a clear warning | `estimator.test.ts` → "warns clearly …" | Publish dialog |
-| 20 | Provider usage distinguished from estimates | `usage_records.source` (`provider` / `local_measured` / `estimate`), `SourceBadge` on every figure; estimator report `meta.rateSource` test | Usage & Limits badges |
-| 21 | Paused workflows stop safely | "21. …" | Pause in builder → pending jobs cancelled |
+| 18 | ~~Estimator recalculates~~ — removed (estimator dropped on request, 2026-10-15); actual use is on the **Usage** page | — | Usage page |
+| 19 | ~~Projected overage warning~~ — removed with the estimator | — | — |
+| 20 | Provider figures distinguished from local counts and estimates | `SourceBadge` on every Usage figure (Meta-reported billable messages vs measured counts vs Redis estimate) | Usage page badges |
+| 21 | Paused workflows stop safely; replacing the live workflow lets open chats finish | "21. …", "21b. …" | Pause (stops open chats) / Make live |
 | 22 | Unauthorized requests can't access leads or flows | `privacy.test.ts` (proxy 401), `routes.test.ts` (401s), DB RLS tests | `curl /api/leads/export` → 401 |
 | 23 | Media private but usable for sending | `privacy.test.ts` → "23. …"; `whatsapp.test.ts` (media must be uploaded to Meta first) | Media preview needs sign-in |
 | 24 | No crawler or anonymous visitor can read data | `privacy.test.ts` → "24. …" | `curl -I` shows `X-Robots-Tag` |

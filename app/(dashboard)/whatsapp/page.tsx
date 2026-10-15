@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { AlertTriangle, Smartphone } from "lucide-react";
 import { PageHeader } from "@/components/common/page-header";
 import { EmptyState } from "@/components/common/empty-state";
-import { CopyButton } from "@/components/common/copy-button";
 import { StatusBadge } from "@/components/common/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AccountForm, TestAccountButton, DeleteAccountButton } from "@/components/whatsapp/account-form";
@@ -28,7 +27,6 @@ export default async function WhatsAppPage() {
       "id, name, waba_id, phone_number_id, display_phone_number, verified_name, quality_rating, enabled, last_verified_at, coexistence, is_on_biz_app, onboarded_at, contacts_sync_requested_at, history_sync_requested_at",
     )
     .order("created_at");
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").replace(/\/+$/, "");
   const metaAppId = process.env.NEXT_PUBLIC_META_APP_ID ?? "";
   const metaConfigId = process.env.NEXT_PUBLIC_META_CONFIG_ID ?? "";
   const connect = metaAppId && metaConfigId ? <ConnectBusinessApp appId={metaAppId} configId={metaConfigId} graphVersion={process.env.META_GRAPH_API_VERSION ?? "v23.0"} /> : null;
@@ -51,28 +49,6 @@ export default async function WhatsAppPage() {
           guide), then reload this page.
         </p>
       )}
-      <Card className="mb-5">
-        <CardHeader>
-          <CardTitle className="text-sm">Webhook configuration (Meta → WhatsApp → Configuration)</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
-          <div>
-            <div className="text-xs text-muted-foreground">Callback URL</div>
-            <div className="mt-1 flex items-center gap-1 rounded-xl bg-muted py-1 pr-1 pl-3">
-              <code className="min-w-0 flex-1 text-xs break-all">{appUrl}/api/webhooks/whatsapp</code>
-              <CopyButton value={`${appUrl}/api/webhooks/whatsapp`} />
-            </div>
-          </div>
-          <div>
-            <div className="text-xs text-muted-foreground">Verify token</div>
-            <div className="mt-1 rounded-xl bg-muted px-3 py-2 text-xs">The value of META_WEBHOOK_VERIFY_TOKEN (server environment; never shown here)</div>
-          </div>
-          <p className="text-xs text-muted-foreground sm:col-span-2">
-            Subscribe these fields: <b>messages</b>, and for a WhatsApp Business app number also <b>smb_message_echoes</b> (your replies from the
-            phone), <b>history</b> and <b>smb_app_state_sync</b> (contacts). Every request is verified with your App Secret (X-Hub-Signature-256).
-          </p>
-        </CardContent>
-      </Card>
       {!accounts?.length ? (
         <EmptyState
           icon={Smartphone}

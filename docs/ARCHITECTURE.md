@@ -26,7 +26,9 @@ flowchart LR
 
 **Design principles**
 
-- **Customer-initiated only.** The engine only ever starts from a stored inbound message (`startExecution`) or resumes an execution that a customer started. There is no outbound trigger, template sender or campaign code. Every send checks the 24-hour window right before it happens, including sends that resume from QStash.
+- **Customer-initiated only.** The engine only ever starts from a stored inbound message (`startExecution`), resumes an execution that a customer started, or restarts one for a customer at a team member's request (inside the 24-hour window). There is no campaign code. Every free-form send checks the 24-hour window right before it happens; approved templates (the *Send template* step, booking reminders) are the only messages allowed after it.
+- **One round trip to start a turn.** `begin_turn` takes the conversation lock and returns the pending messages, conversation, contact, active execution and live workflow in one call; published versions are cached. Execution saves and send results are ordered background writes that finish before the lock is released. "typing…" is requested as soon as a message is recorded, and waits of up to 20 s run inside the request.
+- **Coexistence.** For a number that is also on the WhatsApp Business app, `smb_message_echoes` (the business's own phone replies) are stored as outbound messages and hand the chat to a person; `history` is stored without processing; `smb_app_state_sync` fills contact names. `lib/core/conversation-control.ts` is the single place that switches a chat between bot and person (dashboard, Telegram buttons, auto hand-back).
 - **Ports and adapters.** `lib/engine` and `lib/core` are pure TypeScript and talk to the outside world through `EngineStore`, `MessageSender`, `Scheduler` and `CrmDispatcher`. Production wires in Supabase, Meta, QStash and HTTP adapters. The editor's simulator and the tests use the `MemoryStore` and recording fakes, so the same engine code is exercised everywhere.
 - **Durable first, fast acknowledgement.** The webhook verifies the signature, records the event in a single transaction (the unique `wa_message_id` deduplicates Meta retries), returns 200, and processes the conversation afterwards. If recording fails, the response is non-2xx so Meta retries.
 
@@ -78,7 +80,9 @@ sequenceDiagram
 | QStash delivers a job twice | `claim_scheduled_job` moves `scheduled → running` atomically; a second delivery skips |
 | Customer replies during a delay | Recorded and marked `received_during_delay`; the flow doesn't advance until the job fires |
 | Flow paused while jobs are pending | Jobs cancelled in the database and in QStash, executions parked as `paused`, and the status re-checked when the job runs |
-| Usage budget exhausted | Non-essential waits continue immediately and CRM retries are deferred. Inbound messages are always recorded |
+| Message written before the question was sent | Kept, marked `received_before_question` (or `received_during_previous_run`), and not taken as the answer |
+| Two workflows "live" at once | Impossible: partial unique index on `flows(status) where status = 'active'`; `set_flow_status` swaps them in one transaction |
+| A slot booked twice | `book_slot` serialises per calendar + start time with an advisory lock and checks capacity |
 | Crashed function | Locks expire after 60 s, and the daily sweep replays stranded messages, late jobs and deferred CRM deliveries |
 
 ## Security model
@@ -86,19 +90,10 @@ sequenceDiagram
 - **Authentication**: login with an email or login ID, rate-limited per IP and per account. A TOTP QR code is shown once at enrollment; every later sign-in asks only for the 6-digit code. Attempts are rate-limited.
 - **Authorisation**: `requireAdmin()` in every server action and route handler, and `requirePageSession()` in every page, both require an **aal2** session, an active profile and the right role (owner, admin or staff).
   **RLS**: every table has RLS with a *restrictive* `aal2` policy plus role helpers. Server-only RPCs are revoked from `anon` and `authenticated`. CRM secret columns can't be selected by the browser.
-- **Secrets**: CRM credentials are encrypted with AES-256-GCM (`APP_ENCRYPTION_KEY`). The WhatsApp token is stored only as a server environment variable. Logs scrub keys that look like secrets.
-- **Webhooks**: Meta requests are checked with HMAC-SHA256 over the raw body, compared in constant time. QStash requests are checked with JWT signatures (current and next key). The cron endpoint requires a bearer secret.
-- **Outbound CRM**: HTTPS only in production. Private, loopback, link-local and metadata IPs are rejected, both at DNS lookup and again when the connection opens (which defeats DNS rebinding). Redirects aren't followed, requests time out after 10 s, and responses are size-capped.
+- **Secrets**: CRM credentials and per-number WhatsApp tokens (from *Connect WhatsApp Business app*) are encrypted with AES-256-GCM (`APP_ENCRYPTION_KEY`); their columns can't be selected by dashboard users. `META_ACCESS_TOKEN` is a server environment variable. Logs scrub keys that look like secrets.
+- **Webhooks**: Meta requests are checked with HMAC-SHA256 over the raw body, compared in constant time. QStash requests are checked with JWT signatures (current and next key). Telegram updates must carry the secret token derived from `APP_ENCRYPTION_KEY`, and only chats saved in Settings can press buttons. The cron endpoint requires a bearer secret.
+- **Outbound CRM and API requests**: HTTPS only in production. Private, loopback, link-local and metadata IPs are rejected, both at DNS lookup and again when the connection opens (which defeats DNS rebinding). Redirects aren't followed, requests time out after 10 s, and responses are size-capped.
 - **Privacy**: `robots.txt` disallows everything, every page carries `noindex, nofollow` and `X-Robots-Tag`, frames are denied, and the referrer is withheld. Media storage is private, previews use 60-second signed URLs, and there are no AI or analytics services. Configurable retention redacts message text and deletes old logs.
-
-## Usage estimator
-
-`lib/estimator/analyze.ts` turns the flow graph into a DAG, dropping loop edges. It then walks it in two directions:
-
-- **Typical case (forward pass)**: probability mass spreads through the graph. Condition branches split 50/50, each question loses `completionRate^(1/questions)` of customers, and validation retries are expected values based on the configured invalid-answer rate.
-- **Worst case (backward pass)**: for each resource, the most expensive branch is followed, with every QStash retry and every CRM retry counted.
-
-Only **Wait** steps (and CRM retries in the worst case) count as QStash deliveries. Immediate steps cost nothing. Each quota is compared over its own period (QStash per day, Redis per month, storage in total). Other active flows' published snapshots are subtracted from the shared allowance. Warning bands: <70% normal, 70–84 info, 85–94 high, 95–99 critical, ≥100 exceeded.
 
 ## Entity-relationship diagram
 
