@@ -87,6 +87,14 @@ function OutboundBubble({ m, onPick }: { m: OutboundMessage; onPick: (id: string
       </div>
     );
   }
+  if (m.kind === "template") {
+    return (
+      <div>
+        <div className="text-[11px] font-medium text-muted-foreground">Template “{m.name}” ({m.language})</div>
+        {m.bodyParams.length > 0 && <div className="mt-1 whitespace-pre-wrap">{m.bodyParams.join(" · ")}</div>}
+      </div>
+    );
+  }
   const options = m.kind === "buttons" ? m.buttons : m.rows;
   return (
     <div>

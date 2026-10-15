@@ -49,6 +49,18 @@ export function buildMessagePayload(to: string, message: OutboundMessage, mediaI
           },
         },
       };
+    case "template":
+      return {
+        ...base,
+        type: "template",
+        template: {
+          name: message.name,
+          language: { code: message.language },
+          ...(message.bodyParams.length
+            ? { components: [{ type: "body", parameters: message.bodyParams.map((text) => ({ type: "text", text: text.slice(0, 1024) })) }] }
+            : {}),
+        },
+      };
   }
 }
 

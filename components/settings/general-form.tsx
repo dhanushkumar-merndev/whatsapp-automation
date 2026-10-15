@@ -43,6 +43,7 @@ const TELEGRAM_EVENTS: { key: keyof AppSettings["telegram"]["events"]; label: st
   { key: "handoff", label: "Human help needed", help: "Customer typed HUMAN or could not finish the questions." },
   { key: "handoffMessages", label: "Customer replies to your team", help: "Every message from a customer whose chat is with your team." },
   { key: "leads", label: "New leads", help: "Name, phone, service, business and requirements when an enquiry is submitted." },
+  { key: "bookings", label: "New bookings", help: "Who booked, for what, and when." },
   { key: "problems", label: "Problems", help: "CRM delivery failed, 24-hour window closed, automation errors, missing media." },
 ];
 

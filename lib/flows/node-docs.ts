@@ -81,6 +81,28 @@ export const NODE_DOCS: Record<NodeType, NodeDoc> = {
       `Outputs: "out", plus "no_reply" only when timeoutMinutes > 0.`,
     ],
   },
+  booking: {
+    purpose: "Appointment booking: the customer picks a day, then a free time (WhatsApp lists). Saves the booking, alerts the team, can remind the customer.",
+    config: [
+      `service (string) — what is booked, e.g. "Site visit" or "{{vars.service}}".`,
+      `calendar (string, default "main") — bookings share free slots per calendar.`,
+      `days (array of "mon"…"sun", default Mon–Sat), startTime / endTime ("HH:MM" 24h, default "10:00"–"18:00").`,
+      `slotMinutes (default 30), capacity (bookings per slot, default 1), daysAhead (default 7), minNoticeMinutes (default 60), blockedDates (["YYYY-MM-DD"]).`,
+      `datePrompt, timePrompt (string; timePrompt can use {{booking.date}}), confirmMessage (sent after booking), noSlotsMessage.`,
+      `variable (default "booking") — {{vars.booking}} = "Thu, 15 Oct 2026 at 10:30 AM".`,
+      `reminderHours (0–72, default 0 = off), reminderMessage (text, used while the 24-hour window is open), reminderTemplate (approved template name used otherwise; its {{1}} gets the date and time), reminderTemplateLanguage (default "en").`,
+    ],
+    notes: [`Outputs: "booked", and "no_slots" (optional) when nothing is free.`],
+  },
+  send_template: {
+    purpose: "Send an approved WhatsApp template (needed to message someone after 24 hours, e.g. follow-ups).",
+    config: [
+      `name (string, required) — the template's name exactly as approved in WhatsApp Manager (lowercase_with_underscores).`,
+      `language (string, default "en") — e.g. "en", "en_US", "hi".`,
+      `bodyParams (string[]) — values for {{1}}, {{2}}… in the template body; placeholders allowed.`,
+    ],
+    notes: ["Only use templates the business told you exist; otherwise prefer send_message."],
+  },
   validation: {
     purpose: "Advanced: extra checks (length, regex, allowed options) on the answer to the question right before it. Invalid → re-asks with errorMessage; after maxAttempts → output “invalid”.",
     config: [

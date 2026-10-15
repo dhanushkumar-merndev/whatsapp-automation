@@ -39,12 +39,12 @@ export function listAnswerVariables(def: Pick<FlowDefinition, "nodes">): FlowVar
   const out: FlowVariable[] = [];
   const seen = new Set<string>();
   for (const n of def.nodes) {
-    if (n.type !== "ask_question" && n.type !== "interactive") continue;
+    if (n.type !== "ask_question" && n.type !== "interactive" && n.type !== "booking") continue;
     const c = n.data.config as Record<string, unknown>;
-    const name = typeof c.variable === "string" ? c.variable.trim() : "";
+    const name = typeof c.variable === "string" ? c.variable.trim() : n.type === "booking" ? "booking" : "";
     if (!VARIABLE_NAME.test(name) || seen.has(name)) continue;
     seen.add(name);
-    const prompt = n.type === "ask_question" ? c.question : c.body;
+    const prompt = n.type === "ask_question" ? c.question : n.type === "booking" ? "Booked day and time" : c.body;
     const options = n.type === "interactive" && Array.isArray(c.options) ? (c.options as InteractiveOption[]) : undefined;
     out.push({
       path: `vars.${name}`,

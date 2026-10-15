@@ -42,6 +42,13 @@ export function nodeSummary(
     }
     case "interactive":
       return `${c.selection === "multiple" ? "Several choices · " : ""}${s(c.body)}${noReply(c)}`;
+    case "booking": {
+      const days = ((c.days as string[]) ?? []).map((d) => d[0].toUpperCase() + d.slice(1)).join(", ");
+      const service = s(c.service).trim();
+      return `${service ? `${service} · ` : ""}${days || "no days"} ${s(c.startTime)}–${s(c.endTime)} · ${Number(c.slotMinutes) || 0} min slots${Number(c.reminderHours) > 0 ? ` · reminder ${c.reminderHours}h before` : ""}`;
+    }
+    case "send_template":
+      return s(c.name) ? `Template “${s(c.name)}” (${s(c.language) || "en"})` : "No template chosen yet";
     case "validation":
       return `Checks ${s(c.variable).replace(/_/g, " ") || "?"} · ${Number(c.maxAttempts) || 0} tries`;
     case "condition": {

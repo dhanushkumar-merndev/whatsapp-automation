@@ -49,7 +49,9 @@ export type OutboundMessage =
       footer?: string;
       buttonText: string;
       rows: { id: string; title: string; description?: string }[];
-    };
+    }
+  /** An approved WhatsApp template; the only kind allowed outside the 24-hour window. */
+  | { kind: "template"; name: string; language: string; bodyParams: string[] };
 
 export interface ContactSnapshot {
   id: string;
@@ -197,6 +199,19 @@ export interface LeadRecord {
 }
 
 export type ScheduledJobKind = "flow_resume" | "crm_retry" | "input_timeout" | "booking_reminder";
+
+export interface BookingRecord {
+  id: string;
+  contactId: string;
+  conversationId: string;
+  service: string | null;
+  startsAt: string;
+  endsAt: string;
+  status: "booked" | "confirmed" | "cancelled" | "completed" | "no_show";
+  isTest: boolean;
+  /** Rendered when booking: the text reminder and the template fallback. */
+  reminder: { text: string; template: string; language: string; params: string[] } | null;
+}
 export type ScheduledJobStatus = "scheduled" | "running" | "completed" | "cancelled" | "failed" | "skipped";
 
 export interface ScheduledJobRecord {
@@ -207,6 +222,7 @@ export interface ScheduledJobRecord {
   nodeId: string | null;
   crmDeliveryId: string | null;
   flowId: string | null;
+  bookingId?: string | null;
   runAt: string;
   status: ScheduledJobStatus;
   qstashMessageId: string | null;
@@ -324,6 +340,24 @@ export interface EngineStore {
   completeOutbound(idempotencyKey: string, result: { waMessageId: string } | { error: string; skipped?: boolean }): Promise<void>;
 
   hasRecentMediaSend(contactId: string, assetId: string, sinceIso: string): Promise<boolean>;
+
+  /** Active bookings per slot start (epoch ms) on a calendar, for availability. */
+  countBookings(input: { calendar: string; fromIso: string; toIso: string }): Promise<Map<number, number>>;
+  /** Books a slot unless it is full (atomic). */
+  createBooking(input: {
+    calendar: string;
+    capacity: number;
+    execution: ExecutionRecord;
+    nodeId: string;
+    conversation: ConversationSnapshot;
+    contact: ContactSnapshot;
+    service: string | null;
+    startsAt: string;
+    endsAt: string;
+    timezone: string;
+    reminder: BookingRecord["reminder"];
+  }): Promise<{ ok: true; id: string } | { ok: false }>;
+  getBooking(id: string): Promise<BookingRecord | null>;
   /** Whether this flow node already messaged the contact since the given time. */
   hasRecentNodeSend(contactId: string, flowId: string, nodeId: string, sinceIso: string): Promise<boolean>;
   getMediaAsset(id: string): Promise<MediaAssetRecord | null>;
@@ -348,6 +382,7 @@ export interface EngineStore {
     runAt: string;
     idempotencyKey: string;
     isTest: boolean;
+    bookingId?: string | null;
   }): Promise<{ job: ScheduledJobRecord; created: boolean }>;
   attachJobMessage(jobId: string, qstashMessageId: string | null): Promise<void>;
   /** Cancels a job that is still scheduled; returns its QStash message id to cancel there too. */

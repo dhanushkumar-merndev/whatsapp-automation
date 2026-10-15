@@ -1,4 +1,5 @@
 import type {
+  BookingRecord,
   ClaimResult,
   ContactSnapshot,
   ConversationSnapshot,
@@ -85,6 +86,7 @@ export class MemoryStore implements AppStore {
   media = new Map<string, MediaAssetRecord>();
   notifications: (NotificationInput & { createdAt: string })[] = [];
   crmIntegrations = new Map<string, CrmIntegrationRecord>();
+  bookings = new Map<string, BookingRecord & { calendar: string; executionId: string | null; nodeId: string | null }>();
   crmDeliveries = new Map<string, CrmDeliveryRecord & { lastError?: string | null; nextAttemptAt?: string | null }>();
   securityEvents: { scope: string; identifier: string; contactId: string | null; createdAt: string }[] = [];
   /** Mirrors app_settings.testPhoneNumbers, which the database checks when recording a message. */
@@ -628,6 +630,7 @@ export class MemoryStore implements AppStore {
     runAt: string;
     idempotencyKey: string;
     isTest: boolean;
+    bookingId?: string | null;
   }) {
     const existing = [...this.jobs.values()].find((j) => j.idempotencyKey === input.idempotencyKey);
     if (existing) return { job: clone(existing), created: false };
@@ -639,6 +642,7 @@ export class MemoryStore implements AppStore {
       nodeId: input.nodeId,
       crmDeliveryId: input.crmDeliveryId,
       flowId: input.flowId,
+      bookingId: input.bookingId ?? null,
       runAt: input.runAt,
       status: "scheduled" as ScheduledJobStatus,
       qstashMessageId: null,
@@ -654,6 +658,46 @@ export class MemoryStore implements AppStore {
   async attachJobMessage(jobId: string, qstashMessageId: string | null) {
     const j = this.jobs.get(jobId);
     if (j) j.qstashMessageId = qstashMessageId;
+  }
+
+  private activeBooking = (b: { status: string }) => b.status === "booked" || b.status === "confirmed";
+
+  async countBookings(input: { calendar: string; fromIso: string; toIso: string }) {
+    const out = new Map<number, number>();
+    for (const b of this.bookings.values()) {
+      if (b.calendar !== input.calendar || !this.activeBooking(b) || b.startsAt < input.fromIso || b.startsAt > input.toIso) continue;
+      const t = new Date(b.startsAt).getTime();
+      out.set(t, (out.get(t) ?? 0) + 1);
+    }
+    return out;
+  }
+
+  async createBooking(input: Parameters<AppStore["createBooking"]>[0]): Promise<{ ok: true; id: string } | { ok: false }> {
+    const mine = [...this.bookings.values()].find((b) => b.executionId === input.execution.id && b.nodeId === input.nodeId && this.activeBooking(b));
+    if (mine) return { ok: true, id: mine.id };
+    const taken = [...this.bookings.values()].filter((b) => b.calendar === input.calendar && b.startsAt === input.startsAt && this.activeBooking(b)).length;
+    if (taken >= input.capacity) return { ok: false };
+    const id = uuid();
+    this.bookings.set(id, {
+      id,
+      calendar: input.calendar,
+      executionId: input.execution.id,
+      nodeId: input.nodeId,
+      contactId: input.contact.id,
+      conversationId: input.conversation.id,
+      service: input.service,
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+      status: "booked",
+      isTest: input.execution.isTest,
+      reminder: input.reminder,
+    });
+    return { ok: true, id };
+  }
+
+  async getBooking(id: string) {
+    const b = this.bookings.get(id);
+    return b ? clone(b) : null;
   }
 
   async cancelScheduledJob(jobId: string) {

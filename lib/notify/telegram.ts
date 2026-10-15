@@ -13,6 +13,7 @@ const EVENT_BY_KIND: Record<string, TelegramEvent> = {
   handoff: "handoff",
   handoff_message: "handoffMessages",
   lead_submitted: "leads",
+  booking_created: "bookings",
   crm_failed: "problems",
   window_expired: "problems",
   automation_error: "problems",
@@ -20,7 +21,7 @@ const EVENT_BY_KIND: Record<string, TelegramEvent> = {
 };
 
 const ICON: Record<NotificationInput["severity"], string> = { info: "🔔", warning: "⚠️", critical: "🚨" };
-const ICON_BY_KIND: Record<string, string> = { handoff: "🙋", handoff_message: "💬", lead_submitted: "✅" };
+const ICON_BY_KIND: Record<string, string> = { handoff: "🙋", handoff_message: "💬", lead_submitted: "✅", booking_created: "📅" };
 
 export function telegramEventFor(kind: string): TelegramEvent | null {
   return EVENT_BY_KIND[kind] ?? null;

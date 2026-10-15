@@ -1,4 +1,5 @@
 import {
+  CalendarDays,
   Gauge,
   Image as ImageIcon,
   LayoutDashboard,
@@ -31,6 +32,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/flows", label: "Workflows", icon: Workflow, role: "admin", section: "Automation" },
   { href: "/leads", label: "Leads", icon: UsersRound, role: "staff", section: "Workspace" },
   { href: "/conversations", label: "Conversations", icon: MessagesSquare, role: "staff", section: "Workspace" },
+  { href: "/bookings", label: "Bookings", icon: CalendarDays, role: "staff", section: "Workspace" },
   { href: "/media", label: "Media Library", icon: ImageIcon, role: "admin", section: "Automation" },
   { href: "/crm", label: "CRM Integrations", icon: Plug, role: "admin", section: "System" },
   { href: "/usage", label: "Usage", icon: Gauge, role: "admin", section: "System" },

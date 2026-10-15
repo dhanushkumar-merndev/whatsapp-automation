@@ -41,6 +41,7 @@ export async function overviewMetrics(db: SupabaseClient, rangeDays: number) {
     crmFailed,
     crmSynced,
     billable,
+    upcomingBookings,
     series,
   ] = await Promise.all([
     count(db.from("contacts").select("id", { count: "exact", head: true }).eq("is_test", false)),
@@ -62,6 +63,7 @@ export async function overviewMetrics(db: SupabaseClient, rangeDays: number) {
     count(
       db.from("messages").select("id", { count: "exact", head: true }).eq("direction", "outbound").eq("pricing_billable", true).gte("created_at", startOfUtcMonth(now).toISOString()),
     ),
+    count(db.from("bookings").select("id", { count: "exact", head: true }).eq("is_test", false).in("status", ["booked", "confirmed"]).gte("starts_at", now.toISOString())),
     db.rpc("dashboard_series", { p_from: fromIso, p_to: now.toISOString(), p_include_test: false }),
   ]);
 
@@ -78,6 +80,7 @@ export async function overviewMetrics(db: SupabaseClient, rangeDays: number) {
     errors: failedNodes + failedExecutions,
     crm: { pending: crmPending, failed: crmFailed, synced: crmSynced },
     billable,
+    upcomingBookings,
     series: ((series.data ?? []) as { day: string; inbound: number; outbound: number; leads: number; qualified: number }[]).map((r) => ({
       day: r.day,
       inbound: Number(r.inbound),

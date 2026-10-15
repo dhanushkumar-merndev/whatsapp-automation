@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   AlertTriangle,
+  CalendarDays,
   Inbox,
   MessageCircle,
   MessagesSquare,
@@ -109,7 +110,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/overvie
           </div>
         </section>
         <section>
-          <h2 className="mb-2.5 text-sm font-medium text-muted-foreground">Integrations</h2>
+          <h2 className="mb-2.5 text-sm font-medium text-muted-foreground">Bookings & integrations</h2>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard
               label="CRM sync"
@@ -119,6 +120,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/overvie
               href="/leads?view=crm_failed"
               tone={m.crm.failed > 0 ? "warning" : "default"}
             />
+            <StatCard label="Upcoming bookings" value={fmtNumber(m.upcomingBookings)} icon={CalendarDays} href="/bookings" />
             <StatCard label="Billable WhatsApp messages" value={fmtNumber(m.billable)} sub="this month, as reported by Meta" icon={Receipt} />
           </div>
         </section>

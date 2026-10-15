@@ -35,7 +35,7 @@ export class RecordingSender implements MessageSender {
 
   texts(): string[] {
     return this.sent.map(({ message: m }) =>
-      m.kind === "text" ? m.text : m.kind === "media" ? `[${m.mediaType}]` : m.body,
+      m.kind === "text" ? m.text : m.kind === "media" ? `[${m.mediaType}]` : m.kind === "template" ? `[template ${m.name}]` : m.body,
     );
   }
 }

@@ -10,6 +10,7 @@ import { loadSettings } from "@/lib/settings/server";
 import {
   ACTIVE_EXECUTION_STATUSES,
   OPEN_LEAD_STATUSES,
+  type BookingRecord,
   type ClaimResult,
   type ContactSnapshot,
   type ConversationSnapshot,
@@ -108,6 +109,7 @@ function toJob(r: Row): ScheduledJobRecord {
     nodeId: (r.node_id as string) ?? null,
     crmDeliveryId: (r.crm_delivery_id as string) ?? null,
     flowId: (r.flow_id as string) ?? null,
+    bookingId: (r.booking_id as string) ?? null,
     runAt: r.run_at as string,
     status: r.status as ScheduledJobStatus,
     qstashMessageId: (r.qstash_message_id as string) ?? null,
@@ -628,7 +630,7 @@ export class SupabaseStore implements AppStore {
           conversation_id: claim.conversationId,
           contact_id: claim.contactId,
           idempotency_key: claim.idempotencyKey,
-          type: m.kind === "media" ? m.mediaType : m.kind === "text" ? "text" : "interactive",
+          type: m.kind === "media" ? m.mediaType : m.kind === "text" || m.kind === "template" ? m.kind : "interactive",
           body: claim.preview,
           payload: m,
           media_asset_id: claim.mediaAssetId ?? "",
@@ -768,10 +770,12 @@ export class SupabaseStore implements AppStore {
     runAt: string;
     idempotencyKey: string;
     isTest: boolean;
+    bookingId?: string | null;
   }) {
     const { data, error } = await this.db
       .from("scheduled_jobs")
       .insert({
+        booking_id: input.bookingId ?? null,
         kind: input.kind,
         execution_id: input.executionId,
         conversation_id: input.conversationId,
@@ -795,6 +799,67 @@ export class SupabaseStore implements AppStore {
 
   async attachJobMessage(jobId: string, qstashMessageId: string | null) {
     check(await this.db.from("scheduled_jobs").update({ qstash_message_id: qstashMessageId }).eq("id", jobId), "attach job message");
+  }
+
+  async countBookings(input: { calendar: string; fromIso: string; toIso: string }) {
+    const rows = check(
+      await this.db
+        .from("bookings")
+        .select("starts_at")
+        .eq("calendar", input.calendar)
+        .in("status", ["booked", "confirmed"])
+        .gte("starts_at", input.fromIso)
+        .lte("starts_at", input.toIso)
+        .limit(5000),
+      "count bookings",
+    );
+    const out = new Map<number, number>();
+    for (const r of rows ?? []) {
+      const t = new Date(r.starts_at as string).getTime();
+      out.set(t, (out.get(t) ?? 0) + 1);
+    }
+    return out;
+  }
+
+  async createBooking(input: Parameters<AppStore["createBooking"]>[0]): Promise<{ ok: true; id: string } | { ok: false }> {
+    const r = check(
+      await this.db.rpc("book_slot", {
+        p: {
+          calendar: input.calendar,
+          capacity: input.capacity,
+          contact_id: input.contact.id,
+          conversation_id: input.conversation.id,
+          flow_id: input.execution.flowId,
+          flow_execution_id: input.execution.id,
+          node_id: input.nodeId,
+          lead_id: input.execution.context.leadId ?? "",
+          service: input.service ?? "",
+          starts_at: input.startsAt,
+          ends_at: input.endsAt,
+          timezone: input.timezone,
+          reminder: input.reminder,
+          is_test: input.execution.isTest,
+        },
+      }),
+      "book slot",
+    ) as Row;
+    return r.ok ? { ok: true, id: r.id as string } : { ok: false };
+  }
+
+  async getBooking(id: string) {
+    const r = check(await this.db.from("bookings").select("*").eq("id", id).maybeSingle(), "load booking");
+    if (!r) return null;
+    return {
+      id: r.id as string,
+      contactId: r.contact_id as string,
+      conversationId: r.conversation_id as string,
+      service: (r.service as string) ?? null,
+      startsAt: r.starts_at as string,
+      endsAt: r.ends_at as string,
+      status: r.status as BookingRecord["status"],
+      isTest: Boolean(r.is_test),
+      reminder: (r.reminder as BookingRecord["reminder"]) ?? null,
+    };
   }
 
   async cancelScheduledJob(jobId: string) {

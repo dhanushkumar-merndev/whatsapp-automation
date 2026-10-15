@@ -311,6 +311,24 @@ describe("one live workflow", () => {
   });
 });
 
+describe("bookings", () => {
+  it("book_slot respects capacity and does not double-book the same step", async () => {
+    const conv = await one<{ id: string; contact_id: string }>(`select id, contact_id from public.conversations limit 1`);
+    const base = { calendar: "main", contact_id: conv.contact_id, conversation_id: conv.id, starts_at: "2026-10-15T05:00:00Z", ends_at: "2026-10-15T05:30:00Z", capacity: 1 };
+    const book = (extra: Record<string, unknown>) => one<{ r: { ok: boolean; id?: string; existing?: boolean; reason?: string } }>(`select public.book_slot($1) as r`, [{ ...base, ...extra }]);
+    const a = await book({ node_id: "b1" });
+    expect(a.r.ok).toBe(true);
+    expect((await book({ node_id: "b2" })).r).toEqual({ ok: false, reason: "full" });
+    // Two per slot allowed on another calendar.
+    expect((await book({ calendar: "room2", capacity: 2, node_id: "x" })).r.ok).toBe(true);
+    expect((await book({ calendar: "room2", capacity: 2, node_id: "y" })).r.ok).toBe(true);
+    expect((await book({ calendar: "room2", capacity: 2, node_id: "z" })).r.ok).toBe(false);
+    // Cancelling frees the slot.
+    await db.query(`update public.bookings set status = 'cancelled' where id = $1`, [a.r.id]);
+    expect((await book({ node_id: "b3" })).r.ok).toBe(true);
+  });
+});
+
 describe("row level security", () => {
   it("anon cannot read leads or conversations", async () => {
     await expect(asRole(db, "anon", {}, (tx) => tx.query(`select * from public.conversations`))).rejects.toThrow(

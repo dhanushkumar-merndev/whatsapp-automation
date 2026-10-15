@@ -18,6 +18,9 @@ export function toneClass(tone: Tone): string {
 const STATUS_TONES: Record<string, Tone> = {
   active: "green",
   completed: "green",
+  booked: "blue",
+  confirmed: "green",
+  no_show: "gray",
   succeeded: "green",
   synced: "green",
   qualified: "green",

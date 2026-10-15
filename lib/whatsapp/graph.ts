@@ -163,6 +163,33 @@ export async function fetchInboundMedia(mediaId: string): Promise<{ body: Readab
   return { body: res.body, contentType: info.mime_type ?? res.headers.get("content-type") ?? "application/octet-stream" };
 }
 
+export interface MessageTemplate {
+  name: string;
+  language: string;
+  category: string;
+  /** Body text with {{1}}, {{2}}… placeholders. */
+  body: string;
+  /** How many body placeholders the template expects. */
+  params: number;
+}
+
+/** Approved message templates of a WhatsApp Business Account. */
+export async function listMessageTemplates(wabaId: string): Promise<MessageTemplate[]> {
+  const res = (await graphFetch(
+    `${encodeURIComponent(wabaId)}/message_templates?fields=name,language,status,category,components&status=APPROVED&limit=200`,
+    { method: "GET" },
+    1,
+  )) as { data?: { name: string; language: string; status: string; category: string; components?: { type: string; text?: string }[] }[] };
+  return (res.data ?? [])
+    .filter((t) => t.status === "APPROVED")
+    .map((t) => {
+      const body = t.components?.find((c) => c.type === "BODY")?.text ?? "";
+      const numbers = [...body.matchAll(/\{\{\s*(\d+)\s*\}\}/g)].map((m) => Number(m[1]));
+      return { name: t.name, language: t.language, category: t.category, body, params: numbers.length ? Math.max(...numbers) : 0 };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 /** Reads phone number details for the WhatsApp Accounts page ("Test connection"). */
 export async function fetchPhoneNumberInfo(phoneNumberId: string) {
   const res = await graphFetch(

@@ -13,6 +13,7 @@ import { blankFlowDefinition } from "@/lib/flows/blank-flow";
 import { buildAiPrompt } from "@/lib/flows/ai-prompt";
 import { importFlowJson } from "@/lib/flows/import";
 import { qstashClient } from "@/lib/qstash";
+import { listMessageTemplates, type MessageTemplate } from "@/lib/whatsapp/graph";
 
 const uuid = z.uuid();
 
@@ -54,6 +55,22 @@ export async function getAiPromptAction(): Promise<ActionResult<string>> {
       supabase.from("crm_integrations").select("id, name, enabled").order("created_at"),
     ]);
     return buildAiPrompt({ media: media ?? [], crm: crm ?? [] });
+  });
+}
+
+/** Approved WhatsApp templates of the current number's business account, for "Send template" and booking reminders. */
+export async function listTemplatesAction(): Promise<ActionResult<MessageTemplate[]>> {
+  return runAction(async () => {
+    await requireAdmin();
+    const { data: account } = await createAdminClient()
+      .from("whatsapp_accounts")
+      .select("waba_id")
+      .eq("enabled", true)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!account) throw new Error("Add a WhatsApp account first.");
+    return listMessageTemplates(account.waba_id);
   });
 }
 

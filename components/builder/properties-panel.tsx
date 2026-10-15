@@ -33,6 +33,8 @@ import { NODE_ICONS } from "./node-icons";
 import { useEditorContext } from "./editor-context";
 import { handleColor, type EditorNode } from "./model";
 import { InteractivePreview, TextPreview } from "./wa-preview";
+import { TemplatePicker, useTemplates } from "./template-picker";
+import { WEEKDAY_IDS } from "@/lib/engine/schema";
 
 type Config = Record<string, unknown>;
 
@@ -857,5 +859,141 @@ function NodeForm({
 
     case "end":
       return <Note>The flow finishes here. The customer can start it again by messaging later.</Note>;
+
+    case "send_template":
+      return <SendTemplateForm c={c} set={set} />;
+
+    case "booking":
+      return <BookingForm nodeId={nodeId} c={c} set={set} errors={errors} definition={definition} />;
   }
+}
+
+function SendTemplateForm({ c, set }: { c: Config; set: (p: Config) => void }) {
+  const loaded = useTemplates();
+  const name = typeof c.name === "string" ? c.name : "";
+  const language = typeof c.language === "string" ? c.language : "en";
+  const params = (c.bodyParams as string[]) ?? [];
+  const template = loaded?.ok ? loaded.templates.find((t) => t.name === name && t.language === language) : undefined;
+  const count = Math.max(template?.params ?? 0, params.length);
+  return (
+    <div className="space-y-4">
+      <Field label="Template">
+        <TemplatePicker
+          name={name}
+          language={language}
+          onChange={(v) => set({ name: v.name, language: v.language, ...(v.template ? { bodyParams: Array.from({ length: v.template.params }, (_, i) => params[i] ?? "") } : {}) })}
+        />
+      </Field>
+      {count > 0 && (
+        <Section title="Values for the placeholders">
+          <div className="space-y-2">
+            {Array.from({ length: count }, (_, i) => (
+              <Field key={i} label={`{{${i + 1}}}`}>
+                <MessageField value={params[i] ?? ""} onChange={(v) => set({ bodyParams: Array.from({ length: count }, (_, j) => (j === i ? v : (params[j] ?? ""))) })} rows={1} maxLength={1024} />
+              </Field>
+            ))}
+          </div>
+        </Section>
+      )}
+      <Note>Templates can be sent any time, even after the 24-hour window — use them for follow-ups. WhatsApp may charge for them.</Note>
+    </div>
+  );
+}
+
+const DAY_LABELS: Record<(typeof WEEKDAY_IDS)[number], string> = { sun: "Sun", mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat" };
+
+function BookingForm({ nodeId, c, set, errors, definition }: { nodeId: string; c: Config; set: (p: Config) => void; errors: Map<string, string>; definition: FlowDefinition }) {
+  const str = (k: string) => (typeof c[k] === "string" ? (c[k] as string) : "");
+  const num = (k: string) => (typeof c[k] === "number" ? (c[k] as number) : null);
+  const days = (c.days as string[]) ?? [];
+  return (
+    <div className="space-y-5">
+      <Field label="What is being booked" help="Shown to your team, e.g. “Site visit” or {{vars.service}}.">
+        <MessageField value={str("service")} onChange={(v) => set({ service: v })} rows={1} maxLength={200} placeholder="Consultation call" />
+      </Field>
+      <Field label="Open on" error={errors.get("days")}>
+        <div className="flex flex-wrap gap-1.5">
+          {[...WEEKDAY_IDS.slice(1), WEEKDAY_IDS[0]].map((d) => {
+            const on = days.includes(d);
+            return (
+              <button
+                key={d}
+                type="button"
+                onClick={() => set({ days: on ? days.filter((x) => x !== d) : [...days, d] })}
+                className={cn("rounded-full border px-3 py-1 text-xs transition-colors", on ? "border-foreground bg-foreground text-background" : "hover:bg-muted")}
+              >
+                {DAY_LABELS[d]}
+              </button>
+            );
+          })}
+        </div>
+      </Field>
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="From" error={errors.get("startTime")}>
+          <TextField type="time" value={str("startTime")} onChange={(v) => set({ startTime: v })} />
+        </Field>
+        <Field label="Until" error={errors.get("endTime")}>
+          <TextField type="time" value={str("endTime")} onChange={(v) => set({ endTime: v })} />
+        </Field>
+        <Field label="Each slot">
+          <NumberField value={num("slotMinutes")} onChange={(v) => set({ slotMinutes: v ?? 30 })} min={5} max={480} suffix="min" />
+        </Field>
+        <Field label="Bookings per slot">
+          <NumberField value={num("capacity")} onChange={(v) => set({ capacity: v ?? 1 })} min={1} max={100} />
+        </Field>
+        <Field label="Show the next">
+          <NumberField value={num("daysAhead")} onChange={(v) => set({ daysAhead: v ?? 7 })} min={1} max={60} suffix="days" />
+        </Field>
+        <Field label="Earliest booking">
+          <NumberField value={num("minNoticeMinutes")} onChange={(v) => set({ minNoticeMinutes: v ?? 0 })} min={0} max={10080} suffix="min from now" />
+        </Field>
+      </div>
+      <Field label="Closed on (holidays)" help="Dates as YYYY-MM-DD. Press Enter after each." error={errors.get("blockedDates")}>
+        <TagInput value={(c.blockedDates as string[]) ?? []} onChange={(v) => set({ blockedDates: v })} placeholder="2026-11-01" max={100} />
+      </Field>
+      <Field label="Ask for the day" error={errors.get("datePrompt")}>
+        <MessageField value={str("datePrompt")} onChange={(v) => set({ datePrompt: v })} rows={2} />
+      </Field>
+      <Field label="Ask for the time" help="{{booking.date}} is the chosen day." error={errors.get("timePrompt")}>
+        <MessageField value={str("timePrompt")} onChange={(v) => set({ timePrompt: v })} rows={2} />
+      </Field>
+      <Field label="After booking, send" help="{{vars.booking}} is the day and time. Leave empty to send nothing.">
+        <MessageField value={str("confirmMessage")} onChange={(v) => set({ confirmMessage: v })} rows={2} />
+      </Field>
+      <Field label="When nothing is free, send">
+        <MessageField value={str("noSlotsMessage")} onChange={(v) => set({ noSlotsMessage: v })} rows={2} />
+      </Field>
+      <Section title="Reminder">
+        <div className="space-y-3">
+          <Field label="Remind the customer" help="0 = no reminder.">
+            <NumberField value={num("reminderHours")} onChange={(v) => set({ reminderHours: v ?? 0 })} min={0} max={72} suffix="hours before" />
+          </Field>
+          {(num("reminderHours") ?? 0) > 0 && (
+            <>
+              <Field label="Reminder message" help="Used while the 24-hour window is still open.">
+                <MessageField value={str("reminderMessage")} onChange={(v) => set({ reminderMessage: v })} rows={2} />
+              </Field>
+              <Field label="Template when the window has closed" help="Its {{1}} gets the day and time. Without one, late reminders are skipped.">
+                <TemplatePicker
+                  name={str("reminderTemplate")}
+                  language={str("reminderTemplateLanguage") || "en"}
+                  onChange={(v) => set({ reminderTemplate: v.name, reminderTemplateLanguage: v.language })}
+                />
+              </Field>
+            </>
+          )}
+        </div>
+      </Section>
+      <Advanced>
+        <Field label="Calendar" help="Steps using the same calendar share free times. Use different names for separate staff or rooms.">
+          <TextField value={str("calendar")} onChange={(v) => set({ calendar: v })} maxLength={60} />
+        </Field>
+        <Field label="Save the booking as" error={errors.get("variable")}>
+          <TextField value={str("variable")} onChange={(v) => set({ variable: v })} maxLength={40} className="font-mono text-xs" />
+        </Field>
+      </Advanced>
+      <Branches nodeId={nodeId} type="booking" definition={definition} />
+      <Note>Bookings appear on the Bookings page and in Telegram alerts. Times use your business timezone (Settings).</Note>
+    </div>
+  );
 }

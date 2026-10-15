@@ -14,6 +14,8 @@ export const NODE_TYPES = [
   "wait",
   "ask_question",
   "interactive",
+  "booking",
+  "send_template",
   "validation",
   "condition",
   "save_lead",
@@ -111,6 +113,45 @@ export const interactiveConfig = z.object({
   timeoutMinutes,
 });
 
+export const WEEKDAY_IDS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
+export type WeekdayId = (typeof WEEKDAY_IDS)[number];
+const clockTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use 24-hour HH:MM, e.g. 09:30");
+
+export const bookingConfig = z.object({
+  /** What is booked, e.g. "Site visit" or "{{vars.service}}". Shown to the team. */
+  service: z.string().max(200).default(""),
+  /** Bookings share free slots per calendar. */
+  calendar: z.string().trim().min(1).max(60).regex(/^[A-Za-z0-9 _-]+$/, "Letters, numbers, spaces, _ and - only").default("main"),
+  days: z.array(z.enum(WEEKDAY_IDS)).min(1, "Choose at least one day").default(["mon", "tue", "wed", "thu", "fri", "sat"]),
+  startTime: clockTime.default("10:00"),
+  endTime: clockTime.default("18:00"),
+  slotMinutes: z.number().int().min(5).max(480).default(30),
+  /** Bookings allowed per slot. */
+  capacity: z.number().int().min(1).max(100).default(1),
+  daysAhead: z.number().int().min(1).max(60).default(7),
+  minNoticeMinutes: z.number().int().min(0).max(7 * 24 * 60).default(60),
+  blockedDates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD")).max(100).default([]),
+  datePrompt: messageText.default("Which day suits you?"),
+  timePrompt: messageText.default("What time on {{booking.date}}?"),
+  confirmMessage: z.string().max(4096).default("✅ You're booked for {{vars.booking}}. See you then!"),
+  noSlotsMessage: z.string().max(4096).default("Sorry, there are no free times in the next few days. Our team will contact you."),
+  variable: variableName.default("booking"),
+  /** 0 = no reminder. */
+  reminderHours: z.number().int().min(0).max(72).default(0),
+  /** Sent while the 24-hour window is open. */
+  reminderMessage: z.string().max(4096).default("Reminder: your appointment is on {{vars.booking}}. Reply here if you need to change it."),
+  /** Approved template used when the window has closed (blank = skip the reminder then). */
+  reminderTemplate: z.string().max(512).default(""),
+  reminderTemplateLanguage: z.string().max(15).default("en"),
+});
+
+export const sendTemplateConfig = z.object({
+  name: z.string().trim().min(1, "Choose a template").max(512).regex(/^[a-z0-9_]+$/, "Template names use lowercase letters, numbers and _"),
+  language: z.string().trim().min(2).max(15).default("en"),
+  /** Values for {{1}}, {{2}}… in the template body; placeholders allowed. */
+  bodyParams: z.array(z.string().max(1024)).max(20).default([]),
+});
+
 export const validationConfig = z.object({
   variable: variableName,
   required: z.boolean().default(true),
@@ -192,6 +233,8 @@ export const NODE_CONFIG_SCHEMAS = {
   wait: waitConfig,
   ask_question: askQuestionConfig,
   interactive: interactiveConfig,
+  booking: bookingConfig,
+  send_template: sendTemplateConfig,
   validation: validationConfig,
   condition: conditionConfig,
   save_lead: saveLeadConfig,
@@ -208,6 +251,8 @@ export type InteractiveConfig = NodeConfigMap["interactive"];
 export type ValidationConfig = NodeConfigMap["validation"];
 export type ConditionConfig = NodeConfigMap["condition"];
 export type AskQuestionConfig = NodeConfigMap["ask_question"];
+export type BookingConfig = NodeConfigMap["booking"];
+export type SendTemplateConfig = NodeConfigMap["send_template"];
 export type SaveLeadConfig = NodeConfigMap["save_lead"];
 
 // --- Graph -----------------------------------------------------------------

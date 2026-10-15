@@ -1,7 +1,18 @@
 import { FlowGraph } from "./graph";
 import { applyMultiReply, buildInteractiveMessage, buildMultiMessage, isMultiAnswer, matchOption } from "./interactive";
 import { DEFAULT_INPUT_ERRORS, parseAnswer } from "./input-types";
-import { parseNodeConfig, waitSeconds, type ConditionConfig, type FlowNode, type LeadField } from "./schema";
+import {
+  availableDays,
+  bookingWindow,
+  dateListMessage,
+  parseBookingReply,
+  timeLabel,
+  timeListMessage,
+  whenLabel,
+  type BookingAnswer,
+  type BookingState,
+} from "./booking";
+import { parseNodeConfig, waitSeconds, type BookingConfig, type ConditionConfig, type FlowNode, type LeadField } from "./schema";
 import { renderTemplate, stringify, templateVariables, lookup, type TemplateScope } from "./template";
 import { isOptionAnswer, validateAnswer } from "./validate-answer";
 import { isWindowOpen } from "./window";
@@ -147,6 +158,11 @@ export async function resumeWithInput(
     // A Validate step is re-asking: it checks the new answer.
     storeAnswer(ctx, question, args.input);
     await run(ctx, consumer.id);
+    return ctx.exec;
+  }
+
+  if (question.type === "booking") {
+    await handleBookingReply(ctx, question, args.input);
     return ctx.exec;
   }
 
@@ -432,6 +448,8 @@ function preview(message: OutboundMessage): string {
       return `${message.body}\n${message.buttons.map((b) => `[${b.title}]`).join(" ")}`;
     case "list":
       return `${message.body}\n${message.rows.map((r, i) => `${i + 1}. ${r.title}`).join("\n")}`;
+    case "template":
+      return `[template ${message.name}]${message.bodyParams.length ? ` ${message.bodyParams.join(" · ")}` : ""}`;
   }
 }
 
@@ -439,7 +457,8 @@ type SendOutcome = "sent" | "duplicate" | "window_closed";
 
 async function sendOutbound(ctx: RunContext, node: FlowNode, message: OutboundMessage, suffix = ""): Promise<SendOutcome> {
   const { deps, exec, conversation, contact } = ctx;
-  if (!isWindowOpen(conversation.lastInboundAt, deps.now(), deps.settings)) return "window_closed";
+  // Templates are the one kind of message WhatsApp allows after the 24-hour window.
+  if (message.kind !== "template" && !isWindowOpen(conversation.lastInboundAt, deps.now(), deps.settings)) return "window_closed";
 
   const key = `${exec.id}:${exec.step}:${node.id}${suffix ? `:${suffix}` : ""}`;
   const asset = message.kind === "media" ? await deps.store.getMediaAsset(message.assetId) : null;
@@ -506,6 +525,120 @@ async function waitForAnswer(ctx: RunContext, nodeId: string, questionNodeId: st
     timeoutJobId = job.id;
   }
   exec.awaiting = { kind: "input", nodeId, questionNodeId, since, timeoutJobId };
+}
+
+const bookingStateKey = (nodeId: string) => `__booking_${nodeId}`;
+
+async function loadBookingDays(ctx: RunContext, cfg: BookingConfig) {
+  const { deps } = ctx;
+  const timezone = deps.settings.business.timezone;
+  const now = deps.now();
+  const { from, to } = bookingWindow(cfg, timezone, now);
+  const taken = await deps.store.countBookings({ calendar: cfg.calendar, fromIso: from, toIso: to });
+  return availableDays(cfg, { timezone, now, taken });
+}
+
+/** One reply during a booking: pick a day, page through times, pick a time (which books it). */
+async function handleBookingReply(ctx: RunContext, node: FlowNode, input: InboundInput) {
+  const { deps, exec, graph } = ctx;
+  const cfg = parseNodeConfig("booking", node.data.config);
+  const key = bookingStateKey(node.id);
+  const timezone = deps.settings.business.timezone;
+  const state = (exec.context.vars[key] as BookingState | undefined) ?? { stage: "date" };
+  const days = await loadBookingDays(ctx, cfg);
+  const day = state.stage === "time" ? days.find((d) => d.date === state.date) : undefined;
+  const offset = state.offset ?? 0;
+  const reply = parseBookingReply(state, input, {
+    timezone,
+    now: deps.now(),
+    days: days.slice(0, 10).map((d) => d.date),
+    times: day ? day.slots.slice(offset, offset + 8).map((s) => s.time) : [],
+  });
+  const askAgain = async (next: BookingState, notice?: string) => {
+    exec.context.vars[key] = next;
+    ctx.notice = notice;
+    await run(ctx, node.id);
+  };
+
+  switch (reply.kind) {
+    case "date":
+      if (!days.some((d) => d.date === reply.date)) return askAgain({ stage: "date" }, "That day has no free times. Please pick a day from the list.");
+      return askAgain({ stage: "time", date: reply.date, offset: 0 });
+    case "page":
+      return askAgain({ ...state, offset: reply.offset });
+    case "back":
+      return askAgain({ stage: "date" });
+    case "unknown":
+      return askAgain(state, state.stage === "date" ? "Please pick a day from the list." : "Please pick a time from the list.");
+  }
+
+  if (!day) return askAgain({ stage: "date" }, "Please pick a day first.");
+  const slot = day.slots.find((x) => x.time === reply.time);
+  if (!slot) return askAgain(state, `${timeLabel(reply.time)} isn't free on that day. Please pick a time from the list.`);
+
+  const when = whenLabel(slot.date, slot.time);
+  const answer: BookingAnswer = { kind: "booking", id: "", date: slot.date, time: slot.time, startsAt: slot.startsAt, endsAt: slot.endsAt, title: when, raw: input.text };
+  exec.context.vars[cfg.variable] = answer;
+  const s = scope(ctx);
+  const booked = await deps.store.createBooking({
+    calendar: cfg.calendar,
+    capacity: cfg.capacity,
+    execution: exec,
+    nodeId: node.id,
+    conversation: ctx.conversation,
+    contact: ctx.contact,
+    service: renderTemplate(cfg.service, s).trim() || null,
+    startsAt: slot.startsAt,
+    endsAt: slot.endsAt,
+    timezone,
+    reminder:
+      cfg.reminderHours > 0
+        ? { text: renderTemplate(cfg.reminderMessage, s), template: cfg.reminderTemplate, language: cfg.reminderTemplateLanguage, params: [when] }
+        : null,
+  });
+  if (!booked.ok) {
+    delete exec.context.vars[cfg.variable];
+    return askAgain(state, "Sorry, that time was just taken. Please pick another one.");
+  }
+  answer.id = booked.id;
+  delete exec.context.vars[key];
+
+  const remindAt = new Date(slot.startsAt).getTime() - cfg.reminderHours * 3_600_000;
+  if (cfg.reminderHours > 0 && remindAt > deps.now().getTime() + 60_000) {
+    const { job, created } = await deps.store.createScheduledJob({
+      kind: "booking_reminder",
+      executionId: exec.id,
+      conversationId: ctx.conversation.id,
+      nodeId: node.id,
+      crmDeliveryId: null,
+      flowId: exec.flowId,
+      bookingId: booked.id,
+      runAt: new Date(remindAt).toISOString(),
+      idempotencyKey: `reminder:${booked.id}`,
+      isTest: exec.isTest,
+    });
+    if (created) {
+      const { messageId } = await deps.scheduler.schedule({ jobId: job.id, delaySeconds: Math.round((remindAt - deps.now().getTime()) / 1000) });
+      await deps.store.attachJobMessage(job.id, messageId);
+    }
+  }
+
+  const who = ctx.contact.name ?? ctx.contact.profileName;
+  const service = renderTemplate(cfg.service, s).trim();
+  await deps.store.notify({
+    kind: "booking_created",
+    severity: "info",
+    title: `${exec.isTest ? "[Test] " : ""}New booking: ${who ?? `+${ctx.contact.waId}`}`,
+    body: [`When: ${when}`, service && `For: ${service}`, `Phone: +${ctx.contact.waId}`].filter(Boolean).join("\n"),
+    link: "/bookings",
+    entityType: "booking",
+    entityId: booked.id,
+  });
+  if (cfg.confirmMessage.trim()) {
+    const sent = await sendOutbound(ctx, node, { kind: "text", text: renderTemplate(cfg.confirmMessage, scope(ctx)) }, "confirm");
+    if (sent === "window_closed") deps.logger.warn("booking confirmation not sent: window closed", { executionId: exec.id });
+  }
+  await run(ctx, graph.next(node.id, "booked"));
 }
 
 /** The customer answered: their "No reply" timer is no longer needed. */
@@ -654,6 +787,50 @@ async function executeNode(ctx: RunContext, node: FlowNode): Promise<NodeResult>
       exec.context.lastQuestionNodeId = node.id;
       await waitForAnswer(ctx, node.id, node.id, since);
       return { type: "wait", detail: { outcome, variable: cfg.variable, ...(multiple ? { multiple } : {}) } };
+    }
+
+    case "send_template": {
+      const cfg = parseNodeConfig("send_template", node.data.config);
+      const s = scope(ctx);
+      const outcome = await sendOutbound(ctx, node, {
+        kind: "template",
+        name: cfg.name,
+        language: cfg.language,
+        bodyParams: cfg.bodyParams.map((p) => renderTemplate(p, s).trim() || "-"),
+      });
+      return { type: "next", handle: "out", detail: { outcome, template: cfg.name } };
+    }
+
+    case "booking": {
+      const cfg = parseNodeConfig("booking", node.data.config);
+      const key = bookingStateKey(node.id);
+      const days = await loadBookingDays(ctx, cfg);
+      if (!days.length) {
+        delete exec.context.vars[key];
+        if (cfg.noSlotsMessage.trim()) {
+          const sent = await sendOutbound(ctx, node, { kind: "text", text: renderTemplate(cfg.noSlotsMessage, scope(ctx)) });
+          if (sent === "window_closed") return windowStop();
+        }
+        return { type: "next", handle: "no_slots", detail: { reason: "no_free_slots" } };
+      }
+      let state = (exec.context.vars[key] as BookingState | undefined) ?? { stage: "date" };
+      const day = state.stage === "time" ? days.find((d) => d.date === state.date) : undefined;
+      if (state.stage === "time" && !day) {
+        state = { stage: "date" };
+        ctx.notice ??= "That day is now full. Please pick another day.";
+      }
+      exec.context.vars[key] = state;
+      const since = deps.now().toISOString();
+      const message =
+        state.stage === "time" && day
+          ? timeListMessage(cfg, day.date, day.slots, state.offset ?? 0, scope(ctx), ctx.notice)
+          : dateListMessage(cfg, days, scope(ctx), ctx.notice);
+      ctx.notice = undefined;
+      const outcome = await sendOutbound(ctx, node, message);
+      if (outcome === "window_closed") return windowStop();
+      exec.context.lastQuestionNodeId = node.id;
+      await waitForAnswer(ctx, node.id, node.id, since);
+      return { type: "wait", detail: { outcome, stage: state.stage, freeDays: days.length } };
     }
 
     case "validation": {

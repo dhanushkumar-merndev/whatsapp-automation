@@ -1,6 +1,7 @@
 import { resumeAfterDelay, resumeAfterTimeout } from "@/lib/engine/runner";
 import { attemptCrmDelivery } from "@/lib/engine/crm-attempt";
-import type { ScheduledJobRecord } from "@/lib/engine/types";
+import { isWindowOpen } from "@/lib/engine/window";
+import type { OutboundMessage, ScheduledJobRecord } from "@/lib/engine/types";
 import { processConversation, type PipelineDeps } from "./process-conversation";
 
 export type JobOutcome =
@@ -29,6 +30,7 @@ export async function handleScheduledJob(
 
   if (job.kind === "crm_retry") return runCrmRetry(deps, job);
   if (job.kind === "flow_resume" || job.kind === "input_timeout") return runFlowResume(deps, job, opts.lockWaitMs ?? 8000);
+  if (job.kind === "booking_reminder") return runBookingReminder(deps, job);
   return { status: "skipped", detail: `unsupported_${job.kind}` };
 }
 
@@ -102,6 +104,54 @@ async function resumeClaimed(deps: PipelineDeps, job: ScheduledJobRecord): Promi
   const { execution, resumed } = job.kind === "input_timeout" ? await resumeAfterTimeout(deps, args) : await resumeAfterDelay(deps, args);
   await store.finishScheduledJob(job.id, resumed ? "completed" : "skipped", resumed ? null : "not_resumable");
   return { status: resumed ? "done" : "skipped", detail: execution.status };
+}
+
+/**
+ * Reminds the customer of their booking: a normal message while the 24-hour
+ * window is open, otherwise the approved template (or nothing without one).
+ */
+async function runBookingReminder(deps: PipelineDeps, job: ScheduledJobRecord): Promise<JobOutcome> {
+  const { store } = deps;
+  const claimed = await store.claimScheduledJob(job.id);
+  if (!claimed) return { status: "skipped", detail: "already_claimed" };
+  const finish = async (status: "completed" | "skipped", detail: string): Promise<JobOutcome> => {
+    await store.finishScheduledJob(job.id, status, status === "skipped" ? detail : null);
+    return { status: status === "completed" ? "done" : "skipped", detail };
+  };
+  const booking = claimed.bookingId ? await store.getBooking(claimed.bookingId) : null;
+  if (!booking || (booking.status !== "booked" && booking.status !== "confirmed") || !booking.reminder) return finish("skipped", "booking_not_active");
+  const ctx = await store.getConversationContext(booking.conversationId);
+  if (!ctx || ctx.contact.optedOut) return finish("skipped", "customer_unavailable");
+  const r = booking.reminder;
+  const message: OutboundMessage | null = isWindowOpen(ctx.conversation.lastInboundAt, deps.now(), deps.settings)
+    ? { kind: "text", text: r.text }
+    : r.template
+      ? { kind: "template", name: r.template, language: r.language, bodyParams: r.params }
+      : null;
+  if (!message) return finish("skipped", "window_closed_no_template");
+  const key = `reminder:${booking.id}`;
+  const claim = await store.claimOutbound({
+    idempotencyKey: key,
+    conversationId: ctx.conversation.id,
+    contactId: ctx.contact.id,
+    executionId: null,
+    nodeId: null,
+    message,
+    preview: message.kind === "text" ? message.text : `[template ${message.name}] ${message.bodyParams.join(" · ")}`,
+    mediaAssetId: null,
+    isTest: booking.isTest,
+  });
+  if (claim.status === "duplicate") return finish("skipped", "already_sent");
+  try {
+    const { waMessageId } = await deps.sender.send({ to: ctx.contact.waId, phoneNumberId: ctx.conversation.phoneNumberId, message });
+    await store.completeOutbound(key, { waMessageId });
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    await store.completeOutbound(key, { error });
+    await store.finishScheduledJob(job.id, "failed", error.slice(0, 500));
+    return { status: "done", detail: `failed: ${error}` };
+  }
+  return finish("completed", message.kind);
 }
 
 async function runCrmRetry(deps: PipelineDeps, job: ScheduledJobRecord): Promise<JobOutcome> {

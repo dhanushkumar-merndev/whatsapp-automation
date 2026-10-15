@@ -36,6 +36,7 @@ export const appSettingsSchema = z.object({
           handoff: z.boolean().default(true),
           handoffMessages: z.boolean().default(true),
           leads: z.boolean().default(true),
+          bookings: z.boolean().default(true),
           problems: z.boolean().default(true),
         })
         .prefault({}),

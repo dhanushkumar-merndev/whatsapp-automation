@@ -18,7 +18,7 @@ export interface GraphValidation {
   warnings: GraphIssue[];
 }
 
-const INPUT_NODES: NodeType[] = ["ask_question", "interactive", "validation"];
+const INPUT_NODES: NodeType[] = ["ask_question", "interactive", "booking", "validation"];
 
 /**
  * Static checks run continuously in the editor and again before publishing.
@@ -94,6 +94,17 @@ export function validateFlow(def: FlowDefinition): GraphValidation {
         if (max !== null && max < min) err(`“${label(n.id)}”: the maximum number of choices is lower than the minimum.`, n.id);
       }
     }
+    if (n.type === "booking") {
+      const [sh, sm] = String(cfg.startTime).split(":").map(Number);
+      const [eh, em] = String(cfg.endTime).split(":").map(Number);
+      if (eh * 60 + em - (sh * 60 + sm) < (cfg.slotMinutes as number)) {
+        err(`“${label(n.id)}”: the opening hours are shorter than one ${cfg.slotMinutes}-minute slot.`, n.id);
+      }
+      if ((cfg.reminderHours as number) > 0 && !cfg.reminderTemplate) {
+        warn(`“${label(n.id)}”: reminders more than 24 hours after the customer's last message need an approved template; without one they are skipped.`, n.id);
+      }
+    }
+    if (n.type === "send_template" && !cfg.name) err(`“${label(n.id)}”: choose a template.`, n.id);
     if (n.type === "ask_question" && cfg.inputType === "number" && cfg.min !== null && cfg.max !== null && (cfg.min as number) > (cfg.max as number)) {
       err(`“${label(n.id)}”: the smallest allowed number is greater than the largest.`, n.id);
     }

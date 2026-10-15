@@ -1,5 +1,7 @@
 import {
+  CalendarClock,
   CircleHelp,
+  FileCheck2,
   FileText,
   Flag,
   GitBranch,
@@ -22,6 +24,8 @@ export const NODE_ICONS: Record<NodeType, LucideIcon> = {
   wait: Timer,
   ask_question: CircleHelp,
   interactive: ListChecks,
+  booking: CalendarClock,
+  send_template: FileCheck2,
   validation: ShieldCheck,
   condition: GitBranch,
   save_lead: UserPlus,
