@@ -25,8 +25,11 @@ Meta only lets **Tech Providers** connect WhatsApp Business app numbers.
 3. **Add "Facebook Login for Business"** to the app (Add product).
    - *Settings*: turn on **Login with the JavaScript SDK**; add your site domain (e.g. `sgh-whatsapp.vercel.app`)
      under **Allowed domains**; add `https://<your-site>/whatsapp` under **Valid OAuth redirect URIs**.
-   - *Configurations* → **Create** → choose the **WhatsApp Embedded Signup** template → save, and copy the
-     **Configuration ID**.
+   - *Configurations* → **Create configuration** → login variation **WhatsApp Embedded Signup** → product
+     **WhatsApp** → access token expiration **Never** → permissions `whatsapp_business_management` and
+     `whatsapp_business_messaging` → create, and copy the **Configuration ID**.
+     A new configuration is Embedded Signup **v4** (v2 was retired on 15 Oct 2026). Don't use a template with a
+     60-day token: the bot sends with this token and would stop when it expires.
 4. **Webhook fields**: WhatsApp → Configuration → Webhook fields → subscribe **messages**,
    **smb_message_echoes**, **history** and **smb_app_state_sync**.
 5. **Environment variables** (Vercel → Settings → Environment Variables), then redeploy:

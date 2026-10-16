@@ -109,6 +109,8 @@ export async function connectBusinessAppAction(input: { code: string; wabaId: st
     await subscribeAppToWaba(v.wabaId, token);
     steps.push({ label: "This app now receives the number's messages", ok: true });
     const info = await fetchPhoneNumberInfo(v.phoneNumberId, token);
+    // Meta's own check for a Business app number, in case the finish event name differs.
+    const coexistence = v.coexistence || info.is_on_biz_app === true;
 
     const admin = createAdminClient();
     const now = new Date().toISOString();
@@ -121,7 +123,7 @@ export async function connectBusinessAppAction(input: { code: string; wabaId: st
           phone_number_id: v.phoneNumberId,
           enabled: true,
           access_token_encrypted: encryptSecret(token),
-          coexistence: v.coexistence,
+          coexistence,
           is_on_biz_app: info.is_on_biz_app ?? null,
           onboarded_at: now,
           display_phone_number: info.display_phone_number ?? null,
@@ -139,10 +141,10 @@ export async function connectBusinessAppAction(input: { code: string; wabaId: st
     steps.push({
       label: `Number ${info.display_phone_number ?? v.phoneNumberId} added`,
       ok: true,
-      detail: v.coexistence ? (info.is_on_biz_app ? "Works in the WhatsApp Business app and here." : "Meta does not report it as a Business app number yet.") : undefined,
+      detail: coexistence ? (info.is_on_biz_app ? "Works in the WhatsApp Business app and here." : "Meta does not report it as a Business app number yet.") : undefined,
     });
 
-    if (v.coexistence) {
+    if (coexistence) {
       for (const [kind, label, column] of [
         ["smb_app_state_sync", "Phone contacts shared", "contacts_sync_requested_at"],
         ["history", "Chat history requested (arrives over the next minutes)", "history_sync_requested_at"],
@@ -156,7 +158,7 @@ export async function connectBusinessAppAction(input: { code: string; wabaId: st
         }
       }
     }
-    await audit(session, "whatsapp_account.connected", { type: "whatsapp_account", id: account.id }, { coexistence: v.coexistence, wabaId: v.wabaId });
+    await audit(session, "whatsapp_account.connected", { type: "whatsapp_account", id: account.id }, { coexistence, wabaId: v.wabaId });
     revalidatePath("/whatsapp");
     return steps;
   });

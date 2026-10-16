@@ -124,7 +124,10 @@ export function ConnectBusinessApp({ appId, configId, graphVersion }: { appId: s
           config_id: configId,
           response_type: "code",
           override_default_response_type: true,
-          extras: { setup: {}, featureType: "whatsapp_business_app_onboarding", sessionInfoVersion: "3" },
+          // Embedded Signup v4: the version and products come from the Login for Business
+          // configuration, so extras stay empty (featureType / sessionInfoVersion were v2, retired 15 Oct 2026).
+          // "Connect your existing WhatsApp Business app" is offered inside Meta's flow.
+          extras: { setup: {} },
         },
       );
     } catch (e) {
