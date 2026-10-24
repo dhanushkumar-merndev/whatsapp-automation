@@ -4,6 +4,15 @@ import { loginToAuthEmail, LOGIN_ID_DOMAIN } from "@/lib/auth/login-id";
 
 const active = { status: "active" as const, role: "admin" as const };
 
+describe("MFA switched off in settings", () => {
+  it("lets an active profile in without a factor or aal2, but never a disabled or signed-out one", () => {
+    const off = { verifiedTotpFactors: 0, aal: "aal1", mfaRequired: false };
+    expect(resolveAuthStep({ userId: "u", profile: active, ...off })).toBe("ok");
+    expect(resolveAuthStep({ userId: "u", profile: { ...active, status: "disabled" }, ...off })).toBe("denied");
+    expect(resolveAuthStep({ userId: null, profile: null, ...off })).toBe("login");
+  });
+});
+
 describe("MFA sign-in steps (acceptance 1–3)", () => {
   it("1. a new admin without a verified factor is sent to QR enrollment", () => {
     expect(resolveAuthStep({ userId: "u", profile: { ...active, status: "invited" }, verifiedTotpFactors: 0, aal: "aal1" })).toBe(

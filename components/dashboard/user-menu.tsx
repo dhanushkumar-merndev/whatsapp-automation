@@ -51,7 +51,7 @@ export function UserMenu({ name, role }: { name: string; role: string }) {
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           <Link href="/settings/security">
-            <ShieldCheck /> Security &amp; MFA
+            <ShieldCheck /> Security
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSub>

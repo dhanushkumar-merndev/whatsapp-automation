@@ -1,12 +1,20 @@
 import type { Metadata } from "next";
 import { ChangePassword, ReplaceAuthenticator } from "@/components/settings/security-panel";
 import { requirePageSession } from "@/lib/auth/guard";
+import { loadSettings } from "@/lib/settings/server";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Security" };
 
 export default async function SecurityPage() {
   await requirePageSession("staff");
+  if (!(await loadSettings()).security.mfaRequired) {
+    return (
+      <div className="grid gap-4 lg:grid-cols-2">
+        <ChangePassword />
+      </div>
+    );
+  }
   const supabase = await createClient();
   const { data } = await supabase.auth.mfa.listFactors();
   const verified = (data?.totp ?? []).filter((f) => f.status === "verified").length;

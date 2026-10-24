@@ -6,7 +6,8 @@ import { SegmentedNav } from "@/components/common/segmented-nav";
 const ITEMS = [
   { href: "/settings", label: "General" },
   { href: "/settings/users", label: "Users" },
-  { href: "/settings/security", label: "Security & MFA" },
+  { href: "/settings/security", label: "Security" },
+  { href: "/settings/data", label: "Data" },
   { href: "/settings/audit", label: "Audit log" },
 ];
 

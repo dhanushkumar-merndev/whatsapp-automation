@@ -77,9 +77,10 @@ export async function loginAction(_prev: FormState, formData: FormData): Promise
   }
   await admin.from("profiles").update({ last_login_at: new Date().toISOString() }).eq("id", profile.id);
 
-  // Decide the MFA step from the freshly created session.
-  const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  // Decide the MFA step from the freshly created session (skipped while MFA is switched off).
   const nextPath = safeNext(parsed.data.next);
+  if (!(await loadSettings()).security.mfaRequired) redirect(nextPath);
+  const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
   if (!aal || aal.nextLevel !== "aal2") redirect("/mfa/enroll"); // no verified factor yet → QR enrollment
   if (aal.currentLevel !== "aal2") redirect(`/mfa/verify?next=${encodeURIComponent(nextPath)}`);
   redirect(nextPath);

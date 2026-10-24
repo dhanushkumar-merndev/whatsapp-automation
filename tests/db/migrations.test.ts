@@ -432,6 +432,23 @@ describe("row level security", () => {
     expect(rows.rows).toHaveLength(0);
   });
 
+  it("with MFA switched off an aal1 admin can read, anon still cannot, and switching back restores the rule", async () => {
+    await db.query(`update public.app_settings set settings = jsonb_set(settings, '{security}', '{"mfaRequired": false}') where id = 1`);
+    try {
+      const rows = await asRole(db, "authenticated", { sub: ADMIN, role: "authenticated", aal: "aal1" }, (tx) =>
+        tx.query(`select id from public.conversations`),
+      );
+      expect(rows.rows.length).toBeGreaterThan(0);
+      await expect(asRole(db, "anon", {}, (tx) => tx.query(`select * from public.conversations`))).rejects.toThrow(/permission denied/);
+    } finally {
+      await db.query(`update public.app_settings set settings = settings - 'security' where id = 1`);
+    }
+    const back = await asRole(db, "authenticated", { sub: ADMIN, role: "authenticated", aal: "aal1" }, (tx) =>
+      tx.query(`select id from public.conversations`),
+    );
+    expect(back.rows).toHaveLength(0);
+  });
+
   it("active admins with an aal2 session can read data", async () => {
     const rows = await asRole(db, "authenticated", { sub: ADMIN, role: "authenticated", aal: "aal2" }, (tx) =>
       tx.query(`select id from public.conversations`),

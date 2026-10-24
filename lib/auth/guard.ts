@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRateLimiter, hashIdentifier } from "@/lib/ratelimit";
+import { loadSettings } from "@/lib/settings/server";
 import { resolveAuthStep, roleAllows, STEP_PATHS, type AuthStep, type Role } from "./steps";
 
 export interface AdminSession {
@@ -53,6 +54,7 @@ export const getAuthState = cache(async (): Promise<AuthState> => {
     profile: profile ? { status: profile.status, role: profile.role } : null,
     verifiedTotpFactors: verified,
     aal,
+    mfaRequired: (await loadSettings()).security.mfaRequired,
   });
 
   const session: AdminSession | null = profile

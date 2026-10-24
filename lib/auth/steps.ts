@@ -16,11 +16,14 @@ export interface AuthStepInput {
   profile: { status: "invited" | "active" | "disabled"; role: Role } | null;
   verifiedTotpFactors: number;
   aal: string | null;
+  /** false = MFA switched off in settings: any signed-in active profile is "ok". Default true. */
+  mfaRequired?: boolean;
 }
 
 export function resolveAuthStep(input: AuthStepInput): AuthStep {
   if (!input.userId) return "login";
   if (!input.profile || input.profile.status === "disabled") return "denied";
+  if (input.mfaRequired === false) return "ok";
   if (input.verifiedTotpFactors === 0) return "enroll";
   if (input.aal !== "aal2") return "verify";
   return "ok";

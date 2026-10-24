@@ -75,6 +75,8 @@ export const appSettingsSchema = z.object({
       autoResumeHours: z.number().int().min(0).max(24 * 14).default(0),
     })
     .prefault({}),
+  /** Sign-in rules. mfaRequired=false hides the authenticator step (the database reads the same value). */
+  security: z.object({ mfaRequired: z.boolean().default(true) }).prefault({}),
   /** E.164 digits without "+" — conversations from these numbers are marked as tests. */
   testPhoneNumbers: z.array(z.string().regex(/^\d{6,15}$/)).max(20).default([]),
   window: z
